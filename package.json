@@ -1,0 +1,71 @@
+{
+  "name": "financial-reports-manager",
+  "version": "3.1.2",
+  "private": true,
+  "description": "Arabic RTL financial desktop manager with native Electron persistence",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "portable:folder": "npm run build:folder",
+    "portable:exe": "npm run build:portable",
+    "dist": "npm run build:portable",
+    "build:portable": "npm run build && electron-builder --win --x64",
+    "build:folder": "npm run build && electron-builder --win --x64 --dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@fontsource/cairo": "latest",
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest",
+    "wait-on": "latest",
+    "xlsx": "latest"
+  },
+  "build": {
+    "appId": "com.yahia.financialreports",
+    "productName": "الإدارة المالية",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "build/**/*"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "Financial-Reports-Portable-${version}.exe",
+      "buildUniversalInstaller": false
+    },
+    "asar": true,
+    "compression": "store",
+    "npmRebuild": false,
+    "electronLanguages": [
+      "en-US"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "financial-app-icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "financial-app-icon.png"
+      }
+    ]
+  }
+}
