@@ -498,18 +498,15 @@ function LoanRow({row,index,onChange,onAddPayment,onRemovePayment,onDelete,isEdi
 }
 
 function getLoanInstallmentValue(rows=[]) {
-  const values=(rows||[]).map(row=>parseAmount(row.loanInstallment)).filter(value=>value>0.009);
-  if(!values.length) return 0;
-  const counts=new Map();
-  values.forEach(value=>{
-    const key=Math.round(value*100)/100;
-    counts.set(key,(counts.get(key)||0)+1);
-  });
-  let selected=values[0], bestCount=0;
-  counts.forEach((count,value)=>{
-    if(count>bestCount){ selected=value; bestCount=count; }
-  });
-  return selected;
+  // قيمة القسط في بيان القروض مرتبطة بأول قسط فعلي مسجل:
+  // قسط القرض + العمولة البنكية + قسط التأمين لنفس الصف.
+  const first=(rows||[]).find(row=>
+    parseAmount(row.loanInstallment)>0.009 ||
+    parseAmount(row.bankCommission)>0.009 ||
+    parseAmount(row.insuranceInstallment)>0.009
+  );
+  if(!first) return 0;
+  return parseAmount(first.loanInstallment)+parseAmount(first.bankCommission)+parseAmount(first.insuranceInstallment);
 }
 
 function LoansOverviewPage({loans,onPrint}) {
@@ -566,13 +563,13 @@ function LoansOverviewPage({loans,onPrint}) {
     {grouped.length ? <div className="loan-category-sections">{grouped.map(group=><section className="loan-category-section" key={group.cat}>
       <div className="loan-category-title"><div><Layers/><h3>{group.cat}</h3></div><div className="loan-category-title-actions"><span>{group.items.length} قرض</span><button onClick={()=>printCategory(group.cat)}><Printer/> طباعة التصنيف</button></div></div>
       <div className="loan-overview-card"><div className="loan-overview-table-wrap"><table className="loan-overview-table">
-        <thead><tr><th>م</th><th>اسم القرض</th><th>رقم القرض</th><th>إجمالي القرض</th><th>قيمة القسط</th><th>المسدد</th><th>الرصيد</th><th>بيان</th></tr></thead>
-        <tbody>{group.items.map((loan,index)=><tr key={loan.id}><td>{index+1}</td><td className="loan-name-cell"><strong>{loan.name}</strong><div className="loan-installment-counts"><span className="total">{loan.totalInstallments} قسط</span><span className="paid">{loan.paidInstallments} مسدد</span><span className="remaining">{loan.remainingInstallments} متبقي</span></div></td><td>{loan.loanNumber||'—'}</td><td><strong>{money.format(loan.total)}</strong></td><td className="installment-value"><strong>{money.format(loan.installmentValue)}</strong></td><td className="paid-value">{money.format(loan.paid)}</td><td className={loan.balance>0?'balance-value':'paid-value'}>{money.format(loan.balance)}</td><td><button className="loan-row-print" onClick={()=>printLoan(loan)}><Printer/> طباعة بيان القرض</button></td></tr>)}</tbody>
-      </table></div>
-      <div className="loan-category-totals">{(()=>{
-        const gt=makeTotals(group.items);
-        return <><div><span>إجمالي القروض</span><strong>{money.format(gt.total)} ر.س</strong></div><div className="installments"><span>إجمالي قيم الأقساط</span><strong>{money.format(gt.installmentValue)} ر.س</strong></div><div className="paid"><span>المسدد</span><strong>{money.format(gt.paid)} ر.س</strong></div><div className="balance"><span>الرصيد</span><strong>{money.format(gt.balance)} ر.س</strong></div></>;
-      })()}</div></div>
+        <thead><tr><th>م</th><th>اسم القرض</th><th>رقم القرض</th><th>قسط القرض</th><th>إجمالي القرض</th><th>المسدد</th><th>الرصيد</th><th>بيان</th></tr></thead>
+        <tbody>{group.items.map((loan,index)=><tr key={loan.id}><td>{index+1}</td><td className="loan-name-cell"><strong>{loan.name}</strong><div className="loan-installment-counts"><span className="total">{loan.totalInstallments} قسط</span><span className="paid">{loan.paidInstallments} مسدد</span><span className="remaining">{loan.remainingInstallments} متبقي</span></div></td><td>{loan.loanNumber||'—'}</td><td className="installment-value"><strong>{money.format(loan.installmentValue)}</strong></td><td><strong>{money.format(loan.total)}</strong></td><td className="paid-value">{money.format(loan.paid)}</td><td className={loan.balance>0?'balance-value':'paid-value'}>{money.format(loan.balance)}</td><td><button className="loan-row-print" onClick={()=>printLoan(loan)}><Printer/> طباعة بيان القرض</button></td></tr>)}</tbody>
+        <tfoot>{(()=>{
+          const gt=makeTotals(group.items);
+          return <tr className="loan-overview-total-row"><td colSpan="3">الإجمالي</td><td className="installment-value">{money.format(gt.installmentValue)} ر.س</td><td>{money.format(gt.total)} ر.س</td><td className="paid-value">{money.format(gt.paid)} ر.س</td><td className="balance-value">{money.format(gt.balance)} ر.س</td><td>—</td></tr>;
+        })()}</tfoot>
+      </table></div></div>
     </section>)}</div> : <div className="loan-empty"><Landmark size={42}/><h3>لا توجد قروض في هذا التصنيف</h3></div>}
   </section>;
 }
@@ -584,6 +581,7 @@ function LoanPrintDocument({loan,rows}) {
   const total=principal+interest+insurance;
   const paid=loan.rows.reduce((s,r)=>s+getPaidTotal(r),0);
   const balance=total-paid;
+  const installmentValue=getLoanInstallmentValue(loan.rows||[]);
   return <div className="loan-print-document professional-print-document">
     <PrintReportHeader title="تقرير القرض" subtitle="كشف الأقساط والسداد والعمولات البنكية"/>
     <div className="print-loan-identity">
@@ -596,6 +594,7 @@ function LoanPrintDocument({loan,rows}) {
       <div><span>إجمالي أصل القرض</span><strong>{money.format(principal)} <small>ر.س</small></strong></div>
       <div><span>إجمالي الفوائد</span><strong>{money.format(interest)} <small>ر.س</small></strong></div>
       <div><span>إجمالي التأمين</span><strong>{money.format(insurance)} <small>ر.س</small></strong></div>
+      <div><span>قسط القرض</span><strong>{money.format(installmentValue)} <small>ر.س</small></strong></div>
       <div className="primary"><span>الإجمالي العام</span><strong>{money.format(total)} <small>ر.س</small></strong></div>
       <div className="success"><span>إجمالي المسدد</span><strong>{money.format(paid)} <small>ر.س</small></strong></div>
       <div className="danger"><span>الرصيد المتبقي</span><strong>{money.format(balance)} <small>ر.س</small></strong></div>
@@ -644,9 +643,9 @@ function LoansOverviewPrintDocument({rows,totals,title='بيان القروض ا
       return <section className={`print-loan-category-block print-tone-${gi%4}`} key={group.cat}>
         <div className="print-loan-category-head"><div><Layers/><h2>{group.cat}</h2></div><strong>{group.items.length} قرض</strong></div>
         <table className="professional-print-table overview-print-table categorized">
-          <thead><tr><th>م</th><th>اسم القرض</th><th>رقم القرض</th><th>إجمالي القرض</th><th>قيمة القسط</th><th>المسدد</th><th>الرصيد</th></tr></thead>
-          <tbody>{group.items.map((loan,index)=><tr key={loan.id}><td>{index+1}</td><td className="loan-name-print"><strong className="loan-print-name-text">{loan.name}</strong><div className="loan-installment-counts print-counts print-counts-under-name"><span className="total">{loan.totalInstallments} قسط</span><span className="paid">{loan.paidInstallments} مسدد</span><span className="remaining">{loan.remainingInstallments} متبقي</span></div></td><td>{loan.loanNumber||'—'}</td><td className="strong-cell">{money.format(loan.total)}</td><td className="strong-cell installment-value">{money.format(loan.installmentValue)}</td><td className="paid-cell">{money.format(loan.paid)}</td><td className={loan.balance>0?'balance-cell':'paid-cell'}>{money.format(loan.balance)}</td></tr>)}</tbody>
-          <tfoot><tr><td colSpan="3">إجمالي {group.cat}</td><td>{money.format(gt.total)}</td><td>{money.format(gt.installmentValue)}</td><td>{money.format(gt.paid)}</td><td>{money.format(gt.balance)}</td></tr></tfoot>
+          <thead><tr><th>م</th><th>اسم القرض</th><th>رقم القرض</th><th>قسط القرض</th><th>إجمالي القرض</th><th>المسدد</th><th>الرصيد</th></tr></thead>
+          <tbody>{group.items.map((loan,index)=><tr key={loan.id}><td>{index+1}</td><td className="loan-name-print"><strong className="loan-print-name-text">{loan.name}</strong><div className="loan-installment-counts print-counts print-counts-under-name"><span className="total">{loan.totalInstallments} قسط</span><span className="paid">{loan.paidInstallments} مسدد</span><span className="remaining">{loan.remainingInstallments} متبقي</span></div></td><td>{loan.loanNumber||'—'}</td><td className="strong-cell installment-value">{money.format(loan.installmentValue)}</td><td className="strong-cell">{money.format(loan.total)}</td><td className="paid-cell">{money.format(loan.paid)}</td><td className={loan.balance>0?'balance-cell':'paid-cell'}>{money.format(loan.balance)}</td></tr>)}</tbody>
+          <tfoot><tr><td colSpan="3">إجمالي {group.cat}</td><td>{money.format(gt.installmentValue)}</td><td>{money.format(gt.total)}</td><td>{money.format(gt.paid)}</td><td>{money.format(gt.balance)}</td></tr></tfoot>
         </table>
       </section>
     })}

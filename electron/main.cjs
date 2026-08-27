@@ -140,6 +140,20 @@ function createWindow() {
     console.error('Renderer did-fail-load:', { errorCode, errorDescription, validatedURL });
   });
 
+  // Context menu for user selections and editable fields.
+  // Copy is shown only when there is a selection. Paste is shown only
+  // when Chromium reports that the target is editable and can accept paste.
+  win.webContents.on('context-menu', (_event, params) => {
+    const template = [];
+    if (String(params.selectionText || '').length > 0 && params.editFlags?.canCopy) {
+      template.push({ label: 'نسخ', role: 'copy' });
+    }
+    if (params.isEditable && params.editFlags?.canPaste) {
+      template.push({ label: 'لصق', role: 'paste' });
+    }
+    if (template.length) Menu.buildFromTemplate(template).popup({ window: win });
+  });
+
   let windowSaveTimer;
   const saveWindow = () => {
     clearTimeout(windowSaveTimer);
