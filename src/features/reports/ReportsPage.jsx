@@ -1,12 +1,90 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { BarChart3, ClipboardList, Settings, Printer, Plus, Trash2, Check,
   ArrowDownToLine, ArrowUpFromLine, Search, CalendarDays,
   ChevronRight, ChevronLeft, RotateCcw, Undo2, MoreVertical, FileJson2, Landmark, ListPlus,
   FileSpreadsheet, Upload, History, X, ArrowLeft, ArrowRight, Minus, Square, Pencil, Save,
   Calendar, Maximize2, Building2, CreditCard, Download, Rows3, Columns2,
-  LayoutGrid, List, FolderInput, Layers, SlidersHorizontal } from 'lucide-react';
+  LayoutGrid, List, FolderInput, Layers, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { money, uid, pad, toISO, todayISO, displayDate, isOnOrBefore, cleanLegacyNotes, arabicDayDate, parseAmount, formatAmountInput, confirmDelete } from '../../utils/appUtils.js';
 import { PageErrorBoundary, PrintPreviewModal, DesktopTitleBar, Sidebar, MiniDateCalendar, DateHeader, PageToolbar, SummaryCard, DateCell, AmountCell, TextCell, GrowingTextCell, ExpenseAction, PrintReportHeader } from '../../components/common.jsx';
+
+
+function SmartCompanySelect({value='',companies=[],disabled=false,onChange}) {
+  const [editing,setEditing]=useState(false);
+  const [query,setQuery]=useState('');
+  const boxRef=useRef(null);
+  const inputRef=useRef(null);
+  const source=[...new Set(companies.filter(Boolean))];
+  if(value && !source.includes(value)) source.unshift(value);
+  const normalizedQuery=query.trim().toLowerCase();
+  const filtered=(normalizedQuery
+    ? source.filter(name=>name.toLowerCase().includes(normalizedQuery))
+    : source
+  ).slice(0,8);
+
+  useEffect(()=>{
+    if(!editing)return;
+    const outside=e=>{
+      if(boxRef.current?.contains(e.target))return;
+      setEditing(false);
+      setQuery('');
+    };
+    const key=e=>{
+      if(e.key==='Escape'){
+        setEditing(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('pointerdown',outside);
+    document.addEventListener('keydown',key);
+    const timer=setTimeout(()=>inputRef.current?.focus({preventScroll:true}),0);
+    return()=>{
+      clearTimeout(timer);
+      document.removeEventListener('pointerdown',outside);
+      document.removeEventListener('keydown',key);
+    };
+  },[editing]);
+
+  const choose=next=>{
+    onChange(next);
+    setEditing(false);
+    setQuery('');
+  };
+  const begin=()=>{
+    if(disabled)return;
+    setQuery('');
+    setEditing(true);
+  };
+  const label=value||'— بدون شركة —';
+
+  if(!editing){
+    return <button type="button" disabled={disabled} className="company-cell-combo-display" onClick={begin} title={label}>
+      <span>{label}</span>{!disabled&&<Search size={14}/>} 
+    </button>;
+  }
+
+  return <div ref={boxRef} className="company-cell-combo editing">
+    <div className="company-cell-search-row">
+      <Search size={14}/>
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={e=>setQuery(e.target.value)}
+        onKeyDown={e=>{
+          if(e.key==='Enter' && filtered.length){e.preventDefault();choose(filtered[0]);}
+        }}
+        placeholder="ابحث عن شركة..."
+      />
+      <button type="button" className="company-cell-close" onClick={()=>{setEditing(false);setQuery('')}} title="إغلاق">×</button>
+    </div>
+    <div className="company-cell-results">
+      <button type="button" className={!value?'selected':''} onClick={()=>choose('')}>— بدون شركة —</button>
+      {filtered.map(name=><button type="button" key={name} className={name===value?'selected':''} onClick={()=>choose(name)}>{name}</button>)}
+      {!filtered.length&&<div className="company-cell-no-results">لا توجد شركة مطابقة</div>}
+    </div>
+    {source.length>8&&!normalizedQuery&&<div className="company-cell-search-hint">اكتب للبحث في باقي الشركات</div>}
+  </div>;
+}
 
 function ReportsPage({state,data,totals,filter,setFilter,addBlank,updateCell,removeRow,restoreExpense,isEditing=false,onPrint}) {
   const [layout,setLayout]=useState(()=>localStorage.getItem('financial-reports-layout')||'vertical');
@@ -35,7 +113,7 @@ function ExcelSheet({title,tone,type,rows,departments,companies=[],addBlank,upda
         <td><DateCell disabled={!isEditing} value={item.date} onChange={v=>updateCell(type,item.id,'date',v)}/></td>
         <td><AmountCell disabled={!isEditing} value={item.amount} onChange={v=>updateCell(type,item.id,'amount',v)}/></td>
         <td className="statement-cell"><GrowingTextCell disabled={!isEditing} value={item.statement} onChange={v=>updateCell(type,item.id,'statement',v)} placeholder="اكتب البيان..."/></td>
-        {type==='incomes'&&<td><select disabled={!isEditing} className="cell-input company-cell-select" value={item.company||''} onChange={e=>updateCell(type,item.id,'company',e.target.value)}><option value="">— بدون شركة —</option>{item.company&&!companies.includes(item.company)&&<option value={item.company}>{item.company}</option>}{companies.map(c=><option key={c}>{c}</option>)}</select></td>}
+        {type==='incomes'&&<td><SmartCompanySelect disabled={!isEditing} value={item.company||''} companies={companies} onChange={v=>updateCell(type,item.id,'company',v)}/></td>}
         <td><select disabled={!isEditing} className="cell-input" value={item.department} onChange={e=>updateCell(type,item.id,'department',e.target.value)}><option value="">— بدون قسم —</option>{departments.map(d=><option key={d}>{d}</option>)}</select></td>
         <td><TextCell disabled={!isEditing} multiline value={item.notes} onChange={v=>updateCell(type,item.id,'notes',v)} placeholder="—" onEnterNewRow={addFromNotes}/></td>
         <td>{isEditing ? (type==='expenses' ? <ExpenseAction item={item} onRestore={restoreExpense} onDelete={()=>removeRow(type,item.id)}/> : <button className="row-delete" onClick={()=>removeRow(type,item.id)} title="حذف الصف"><Trash2 size={15}/></button>) : <span className="row-locked-mark">محفوظ</span>}</td>

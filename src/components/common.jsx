@@ -4,7 +4,7 @@ import { BarChart3, ClipboardList, Settings, Printer, Plus, Trash2, Check,
   ChevronRight, ChevronLeft, RotateCcw, Undo2, MoreVertical, FileJson2, Landmark, ListPlus,
   FileSpreadsheet, Upload, History, X, ArrowLeft, ArrowRight, Minus, Square, Pencil, Save,
   Calendar, Maximize2, WalletCards, Building2, CreditCard, Download, Rows3, Columns2,
-  LayoutGrid, List, FolderInput, Layers, SlidersHorizontal, Moon, Sun, AlertTriangle, CalendarRange, Layers3 } from 'lucide-react';
+  LayoutGrid, List, FolderInput, Layers, SlidersHorizontal, Moon, Sun, AlertTriangle, CalendarRange, Layers3, Truck, ShoppingCart } from 'lucide-react';
 import { money, uid, pad, toISO, todayISO, displayDate, isOnOrBefore, cleanLegacyNotes, arabicDayDate, parseAmount, formatAmountInput, confirmDelete } from '../utils/appUtils.js';
 
 class PageErrorBoundary extends Component {
@@ -82,6 +82,8 @@ function Sidebar({page,setPage,theme='light',onToggleTheme}) {
     <button className={page==='incomeCollection'?'active':''} onClick={()=>setPage('incomeCollection')}><CalendarRange/> التحصيل الوارد الشهري</button>
     <button className={page==='incomeCollectionAggregate'?'active':''} onClick={()=>setPage('incomeCollectionAggregate')}><Layers3/> التحصيل الوارد المجمع</button>
     <button className={page==='pending'?'active':''} onClick={()=>setPage('pending')}><ClipboardList/> المبالغ المطلوبة</button>
+    <button className={page==='purchaseOrders'?'active':''} onClick={()=>setPage('purchaseOrders')}><ShoppingCart/> أوامر الشراء</button>
+    <button className={page==='suppliers'?'active':''} onClick={()=>setPage('suppliers')}><Truck/> بيان الموردين</button>
     <button className={page==='banks'?'active':''} onClick={()=>setPage('banks')}><WalletCards/> أرصدة البنوك</button>
 
     <div className="sidebar-collapse">

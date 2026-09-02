@@ -9,7 +9,13 @@ const initialState = {
   expenses: [],
   pending: [],
   banks: [],
-  loans: []
+  loans: [],
+  suppliers: [],
+  supplierTransfers: [],
+  supplierTransferDepartment: '',
+  purchaseOrders: [],
+  purchaseOrderDepartments: [],
+  purchaseRequesters: []
 };
 
 function normalizeState(raw) {
@@ -39,6 +45,19 @@ function normalizeState(raw) {
     incomes: fix(state.incomes, 'income'),
     expenses: fix(state.expenses, 'expense'),
     pending: fix(state.pending, 'pending'),
+    suppliers: (state.suppliers || []).map((x,i)=>({id:x.id||uid(),supplierNumber:String(x.supplierNumber??''),name:String(x.name??''),iban:String(x.iban??''),phone:String(x.phone??''),email:String(x.email??''),address:String(x.address??''),taxNumber:String(x.taxNumber??'')})),
+    supplierTransfers: (state.supplierTransfers || []).map(x=>({id:x.id||uid(),supplierNumber:String(x.supplierNumber??''),supplierName:String(x.supplierName??''),amount:String(x.amount??'')})),
+    supplierTransferDepartment: String(state.supplierTransferDepartment??''),
+    purchaseOrderDepartments: Array.isArray(state.purchaseOrderDepartments) ? state.purchaseOrderDepartments.map(x=>String(x||'').trim()).filter(Boolean) : [],
+    purchaseRequesters: Array.isArray(state.purchaseRequesters) ? state.purchaseRequesters.map(x=>String(x||'').trim()).filter(Boolean) : [],
+    purchaseOrders: (state.purchaseOrders || []).map(x=>({
+      id:x.id||uid(), orderNumber:String(x.orderNumber??''), department:String(x.department??''),
+      amount:String(x.amount??''), statement:String(x.statement??''), submissionDate:x.submissionDate||todayISO,
+      requester:String(x.requester??''), status:x.status==='spent'?'spent':'unspent',
+      orderAttachment:x.orderAttachment&&typeof x.orderAttachment==='object'?x.orderAttachment:null,
+      transferAttachment:x.transferAttachment&&typeof x.transferAttachment==='object'?x.transferAttachment:null,
+      createdAt:x.createdAt||new Date().toISOString()
+    })),
     banks: (state.banks || []).map(bank => ({
       id: bank.id || uid(),
       name: String(bank.name ?? ''),

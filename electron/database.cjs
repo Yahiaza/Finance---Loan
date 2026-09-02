@@ -3,7 +3,7 @@ const { DatabaseSync, backup } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 let db = null;
 let initialized = false;
 let migrationInfo = null;
@@ -111,6 +111,42 @@ function createSchema(database) {
       sort_order INTEGER NOT NULL DEFAULT 0
     ) STRICT;
 
+
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      supplier_number TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL DEFAULT '',
+      iban TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      tax_number TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      payload_json TEXT NOT NULL DEFAULT '{}'
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS supplier_transfers (
+      id TEXT PRIMARY KEY,
+      supplier_number TEXT NOT NULL DEFAULT '',
+      supplier_name TEXT NOT NULL DEFAULT '',
+      amount TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      payload_json TEXT NOT NULL DEFAULT '{}'
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id TEXT PRIMARY KEY,
+      order_number TEXT NOT NULL DEFAULT '',
+      department TEXT NOT NULL DEFAULT '',
+      amount TEXT NOT NULL DEFAULT '',
+      statement TEXT NOT NULL DEFAULT '',
+      submission_date TEXT NOT NULL DEFAULT '',
+      requester TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'unspent',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      payload_json TEXT NOT NULL DEFAULT '{}'
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS incomes (
       id TEXT PRIMARY KEY,
       date TEXT NOT NULL DEFAULT '',
@@ -215,13 +251,14 @@ function createSchema(database) {
     CREATE INDEX IF NOT EXISTS idx_incomes_date ON incomes(date);
     CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
     CREATE INDEX IF NOT EXISTS idx_pending_date_status ON pending_amounts(date, status);
+    CREATE INDEX IF NOT EXISTS idx_purchase_orders_date_status ON purchase_orders(submission_date, status);
     CREATE INDEX IF NOT EXISTS idx_bank_balances_bank_date ON bank_balances(bank_id, date);
     CREATE INDEX IF NOT EXISTS idx_installments_loan_due ON loan_installments(loan_id, due_date);
     CREATE INDEX IF NOT EXISTS idx_loan_payments_installment_date ON loan_payments(installment_id, date);
   `);
 
   const insertMeta = database.prepare('INSERT OR IGNORE INTO app_meta(key,value) VALUES(?,?)');
-  insertMeta.run('schema_version', String(SCHEMA_VERSION));
+  database.prepare('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('schema_version', String(SCHEMA_VERSION));
   insertMeta.run('state_initialized', '0');
   insertMeta.run('created_at', new Date().toISOString());
 }
@@ -262,6 +299,9 @@ function clearStateTables(database) {
     DELETE FROM pending_amounts;
     DELETE FROM expenses;
     DELETE FROM incomes;
+    DELETE FROM supplier_transfers;
+    DELETE FROM suppliers;
+    DELETE FROM purchase_orders;
     DELETE FROM companies;
     DELETE FROM departments;
   `);
@@ -277,12 +317,21 @@ function saveState(state, options = {}) {
     expenses: Array.isArray(state.expenses) ? state.expenses : [],
     pending: Array.isArray(state.pending) ? state.pending : [],
     banks: Array.isArray(state.banks) ? state.banks : [],
-    loans: Array.isArray(state.loans) ? state.loans : []
+    loans: Array.isArray(state.loans) ? state.loans : [],
+    suppliers: Array.isArray(state.suppliers) ? state.suppliers : [],
+    supplierTransfers: Array.isArray(state.supplierTransfers) ? state.supplierTransfers : [],
+    supplierTransferDepartment: safeString(state.supplierTransferDepartment)
+    ,purchaseOrders: Array.isArray(state.purchaseOrders) ? state.purchaseOrders : []
+    ,purchaseOrderDepartments: Array.isArray(state.purchaseOrderDepartments) ? state.purchaseOrderDepartments : []
+    ,purchaseRequesters: Array.isArray(state.purchaseRequesters) ? state.purchaseRequesters : []
   };
 
   const q = {
     dept: database.prepare('INSERT INTO departments(name,sort_order) VALUES(?,?)'),
     company: database.prepare('INSERT INTO companies(name,sort_order) VALUES(?,?)'),
+    supplier: database.prepare('INSERT INTO suppliers(id,supplier_number,name,iban,phone,email,address,tax_number,sort_order,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?)'),
+    supplierTransfer: database.prepare('INSERT INTO supplier_transfers(id,supplier_number,supplier_name,amount,sort_order,payload_json) VALUES(?,?,?,?,?,?)'),
+    purchaseOrder: database.prepare('INSERT INTO purchase_orders(id,order_number,department,amount,statement,submission_date,requester,status,sort_order,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?)'),
     income: database.prepare('INSERT INTO incomes(id,date,amount,statement,department,notes,payload_json) VALUES(?,?,?,?,?,?,?)'),
     expense: database.prepare('INSERT INTO expenses(id,date,amount,statement,department,notes,payload_json) VALUES(?,?,?,?,?,?,?)'),
     pending: database.prepare(`INSERT INTO pending_amounts(id,date,amount,statement,department,notes,status,spent_at,expense_id,marker,specialist,original_amount,is_draft,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
@@ -307,6 +356,13 @@ function saveState(state, options = {}) {
       const v = safeString(name).trim();
       if (v) q.company.run(v, i);
     });
+
+    normalized.suppliers.forEach((x,i)=>{ const id=safeId(x?.id,'supplier',i); q.supplier.run(id,safeString(x?.supplierNumber),safeString(x?.name),safeString(x?.iban),safeString(x?.phone),safeString(x?.email),safeString(x?.address),safeString(x?.taxNumber),i,jsonText({...x,id})); });
+    normalized.supplierTransfers.forEach((x,i)=>{ const id=safeId(x?.id,'supplier-transfer',i); q.supplierTransfer.run(id,safeString(x?.supplierNumber),safeString(x?.supplierName),safeString(x?.amount),i,jsonText({...x,id})); });
+    setMetaInTransaction(database,'supplier_transfer_department',normalized.supplierTransferDepartment);
+    normalized.purchaseOrders.forEach((x,i)=>{const id=safeId(x?.id,'purchase-order',i);q.purchaseOrder.run(id,safeString(x?.orderNumber),safeString(x?.department),safeString(x?.amount),safeString(x?.statement),safeString(x?.submissionDate),safeString(x?.requester),x?.status==='spent'?'spent':'unspent',i,jsonText({...x,id}));});
+    setMetaInTransaction(database,'purchase_order_departments',jsonText(normalized.purchaseOrderDepartments));
+    setMetaInTransaction(database,'purchase_requesters',jsonText(normalized.purchaseRequesters));
 
     normalized.incomes.forEach((x, i) => {
       const id = safeId(x?.id, 'income', i);
@@ -393,6 +449,13 @@ function loadState() {
     notes:r.notes
   }));
 
+  const suppliers=database.prepare('SELECT * FROM suppliers ORDER BY sort_order,rowid').all().map(r=>({...parseJson(r.payload_json,{}),id:r.id,supplierNumber:r.supplier_number,name:r.name,iban:r.iban,phone:r.phone,email:r.email,address:r.address,taxNumber:r.tax_number}));
+  const supplierTransfers=database.prepare('SELECT * FROM supplier_transfers ORDER BY sort_order,rowid').all().map(r=>({...parseJson(r.payload_json,{}),id:r.id,supplierNumber:r.supplier_number,supplierName:r.supplier_name,amount:r.amount}));
+  const supplierTransferDepartment=getMeta('supplier_transfer_department','');
+  const purchaseOrderDepartments=parseJson(getMeta('purchase_order_departments','[]'),[]);
+  const purchaseRequesters=parseJson(getMeta('purchase_requesters','[]'),[]);
+  const purchaseOrders=database.prepare('SELECT * FROM purchase_orders ORDER BY sort_order,rowid').all().map(r=>({...parseJson(r.payload_json,{}),id:r.id,orderNumber:r.order_number,department:r.department,amount:r.amount,statement:r.statement,submissionDate:r.submission_date,requester:r.requester,status:r.status}));
+
   const incomes = mapSimple('incomes');
   const expenses = mapSimple('expenses');
 
@@ -439,7 +502,7 @@ function loadState() {
     installmentCount:Number(r.installment_count), createdAt:r.created_at, rows:installments.get(r.id) || []
   }));
 
-  return { departments, companies, incomes, expenses, pending, banks, loans };
+  return { departments, companies, incomes, expenses, pending, banks, loans, suppliers, supplierTransfers, supplierTransferDepartment, purchaseOrders, purchaseOrderDepartments, purchaseRequesters };
 }
 
 const numericAmount = value => {
@@ -452,6 +515,7 @@ function getStateSummary(state) {
   const incomes=s.incomes || [];
   const expenses=s.expenses || [];
   const pending=s.pending || [];
+  const purchaseOrders=s.purchaseOrders || [];
   const banks=s.banks || [];
   const loans=s.loans || [];
   const loanRows=loans.flatMap(x=>Array.isArray(x?.rows)?x.rows:[]);
@@ -462,6 +526,7 @@ function getStateSummary(state) {
     incomes:incomes.length,
     expenses:expenses.length,
     pending:pending.length,
+    purchaseOrders:purchaseOrders.length,
     pendingPayments:pending.reduce((n,x)=>n+(Array.isArray(x?.partialPayments)?x.partialPayments.length:0),0),
     banks:banks.length,
     bankBalances:bankEntries.length,
@@ -471,6 +536,7 @@ function getStateSummary(state) {
     incomeTotal:incomes.reduce((n,x)=>n+numericAmount(x?.amount),0),
     expenseTotal:expenses.reduce((n,x)=>n+numericAmount(x?.amount),0),
     pendingTotal:pending.reduce((n,x)=>n+numericAmount(x?.amount),0),
+    purchaseOrdersTotal:purchaseOrders.reduce((n,x)=>n+numericAmount(x?.amount),0),
     bankBalanceEntriesTotal:bankEntries.reduce((n,x)=>n+numericAmount(x?.amount),0),
     loanInstallmentsTotal:loanRows.reduce((n,x)=>n+numericAmount(x?.loanInstallment ?? x?.installment),0),
     bankCommissionsTotal:loanRows.reduce((n,x)=>n+numericAmount(x?.bankCommission ?? x?.commission),0),
@@ -480,8 +546,8 @@ function getStateSummary(state) {
 }
 
 function sameSummary(a, b) {
-  const countKeys=['departments','companies','incomes','expenses','pending','pendingPayments','banks','bankBalances','loans','installments','loanPayments'];
-  const moneyKeys=['incomeTotal','expenseTotal','pendingTotal','bankBalanceEntriesTotal','loanInstallmentsTotal','bankCommissionsTotal','insuranceTotal','loanPaidTotal'];
+  const countKeys=['departments','companies','incomes','expenses','pending','pendingPayments','purchaseOrders','banks','bankBalances','loans','installments','loanPayments'];
+  const moneyKeys=['incomeTotal','expenseTotal','pendingTotal','purchaseOrdersTotal','bankBalanceEntriesTotal','loanInstallmentsTotal','bankCommissionsTotal','insuranceTotal','loanPaidTotal'];
   return countKeys.every(k => Number(a[k] || 0) === Number(b[k] || 0))
     && moneyKeys.every(k => Math.abs(Number(a[k] || 0)-Number(b[k] || 0)) < 0.001);
 }

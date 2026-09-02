@@ -9,6 +9,8 @@ import BankBalancesPage from './features/banks/BankBalancesPage.jsx';
 import { LoansPage, LoansOverviewPage } from './features/loans/LoansPage.jsx';
 import SettingsPage from './features/settings/SettingsPage.jsx';
 import { CompaniesPage, MonthlyIncomeCollectionPage, AggregateIncomeCollectionPage } from './features/reports/IncomeCollectionPages.jsx';
+import SuppliersPage from './features/suppliers/SuppliersPage.jsx';
+import PurchaseOrdersPage from './features/purchaseOrders/PurchaseOrdersPage.jsx';
 
 function App() {
   const [state, setState] = useState(loadState);
@@ -29,10 +31,10 @@ function App() {
     return localStorage.getItem('financial-theme') || 'light';
   });
   const [confirmDialog,setConfirmDialog] = useState(null);
-  const [sectionEditing,setSectionEditing] = useState({reports:false,pending:false,banks:false,loans:false,settings:false,companies:false});
+  const [sectionEditing,setSectionEditing] = useState({reports:false,pending:false,purchaseOrders:false,banks:false,loans:false,settings:false,companies:false,suppliers:false});
   const [toast,setToast] = useState(null);
   const [storageInfo,setStorageInfo] = useState(null);
-  const [updateStatus,setUpdateStatus] = useState({currentVersion:'3.1.0',source:{owner:'',repo:'Financial-Reports-Manager',autoCheck:true},configured:false,checked:false,progress:0,downloading:false,downloadedPath:''});
+  const [updateStatus,setUpdateStatus] = useState({currentVersion:'3.3.0',source:{owner:'',repo:'Financial-Reports-Manager',autoCheck:true},configured:false,checked:false,progress:0,downloading:false,downloadedPath:''});
 
   // Keep the app date alive while Electron stays open across midnight.
   // If the user is currently viewing "today", move to the new day automatically.
@@ -450,7 +452,7 @@ function App() {
     <Sidebar page={page} setPage={setPage} theme={theme} onToggleTheme={()=>setTheme(t=>t==='dark'?'light':'dark')}/>
     <main className="content">
       <DateHeader selectedDate={selectedDate} setSelectedDate={setSelectedDate} shiftDay={shiftDay} onExport={exportJson} onImport={importJson}
-        showEditActions={['reports','pending','banks','loans','settings','companies'].includes(page)}
+        showEditActions={['reports','pending','purchaseOrders','banks','loans','settings','companies','suppliers'].includes(page)}
         isSectionEditing={Boolean(sectionEditing[page])}
         onEditSection={()=>setSectionEditing(s=>({...s,[page]:true}))}
         onSaveSection={()=>{
@@ -462,7 +464,9 @@ function App() {
         {page==='companies' && <CompaniesPage companies={state.companies||[]} isEditing={sectionEditing.companies} onChange={companies=>setState(s=>({...s,companies}))} onNotify={setToast}/>}
         {page==='incomeCollection' && <MonthlyIncomeCollectionPage incomes={state.incomes} departments={state.departments} onNotify={setToast}/>}
         {page==='incomeCollectionAggregate' && <AggregateIncomeCollectionPage incomes={state.incomes} departments={state.departments}/>}
+        {page==='suppliers' && <SuppliersPage state={state} isEditing={sectionEditing.suppliers} onChange={patch=>setState(prev=>({...prev,...patch}))} onNotify={setToast}/>}
         {page==='pending' && <PendingPage state={state} data={state.pending} selectedDate={selectedDate} filter={filter} setFilter={setFilter} addBlank={addBlank} updateCell={updateCell} removeRow={removeRow} finalizePending={finalizePending} transferPending={transferPending} partiallyPayPending={partiallyPayPending} isEditing={sectionEditing.pending} onPrint={()=>printReport('pending')}/>}      
+        {page==='purchaseOrders' && <PurchaseOrdersPage state={state} isEditing={sectionEditing.purchaseOrders} onChange={patch=>setState(prev=>({...prev,...patch}))} onNotify={setToast}/>}
         {page==='loans' && <LoansPage loans={state.loans} isEditing={sectionEditing.loans} onChange={updater=>setState(s=>({...s,loans:typeof updater==='function'?updater(s.loans):updater}))} onPrint={()=>printReport('loan')}/>}
         {page==='loanStats' && <LoansOverviewPage loans={state.loans} onPrint={(mode='loan-overview')=>printReport(mode)}/>}
         {page==='banks' && <BankBalancesPage banks={state.banks} departments={state.departments} selectedDate={selectedDate} isEditing={sectionEditing.banks} onChange={banks=>setState(s=>({...s,banks}))} onPrint={()=>printReport('banks')} onNotify={setToast}/>}

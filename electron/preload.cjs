@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('desktopApp', {
   exportJson: (payload) => ipcRenderer.invoke('export-json', payload),
   importJson: () => ipcRenderer.invoke('import-json'),
   exportPdf: (payload) => ipcRenderer.invoke('export-pdf', payload),
+  selectPurchaseAttachment: (kind) => ipcRenderer.invoke('purchase-orders:select-attachment', kind),
+  openPurchaseAttachment: (filePath) => ipcRenderer.invoke('purchase-orders:open-attachment', filePath),
   minimizeWindow: () => ipcRenderer.invoke('desktop:window-minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('desktop:window-toggle-maximize'),
   closeWindow: () => ipcRenderer.invoke('desktop:window-close'),

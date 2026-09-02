@@ -216,6 +216,41 @@ ipcMain.handle('export-pdf', async (_event, payload = {}) => {
   }
 });
 
+ipcMain.handle('purchase-orders:select-attachment', async (_event, kind = 'order') => {
+  try {
+    const transfer = kind === 'transfer';
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: transfer ? 'اختر صورة التحويل' : 'اختر صورة أو ملف PDF لأمر الشراء',
+      properties:['openFile'],
+      filters: transfer
+        ? [{name:'الصور',extensions:['png','jpg','jpeg','webp']}]
+        : [{name:'الصور وملفات PDF',extensions:['pdf','png','jpg','jpeg','webp']}]
+    });
+    if(result.canceled || !result.filePaths?.[0]) return {ok:false,canceled:true};
+    const source=result.filePaths[0];
+    const attachmentDir=path.join(database.paths().dataDir,'purchase-order-attachments');
+    fs.mkdirSync(attachmentDir,{recursive:true});
+    const ext=path.extname(source).toLowerCase();
+    const base=path.basename(source,ext).replace(/[^\p{L}\p{N}._-]+/gu,'-').slice(0,70)||'attachment';
+    const target=path.join(attachmentDir,`${Date.now()}-${Math.random().toString(36).slice(2,8)}-${base}${ext}`);
+    fs.copyFileSync(source,target);
+    return {ok:true,attachment:{name:path.basename(source),path:target,type:ext==='.pdf'?'pdf':'image',addedAt:new Date().toISOString()}};
+  } catch(error) {
+    return {ok:false,error:error.message};
+  }
+});
+
+ipcMain.handle('purchase-orders:open-attachment', async (_event, filePath) => {
+  try {
+    const resolved=path.resolve(String(filePath||''));
+    if(!fs.existsSync(resolved)) return {ok:false,error:'الملف المرفق غير موجود في مكانه المحفوظ.'};
+    const error=await shell.openPath(resolved);
+    return error?{ok:false,error}:{ok:true};
+  } catch(error) {
+    return {ok:false,error:error.message};
+  }
+});
+
 ipcMain.handle('desktop:get-state', async () => {
   try {
     await database.initialize();
