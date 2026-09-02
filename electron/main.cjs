@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const database = require('./database.cjs');
 const updateManager = require('./update-manager.cjs');
+const centralClient = require('./central-client.cjs');
 
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 if (process.platform === 'win32') app.setAppUserModelId('com.yahia.financialreports');
@@ -228,6 +229,10 @@ ipcMain.handle('purchase-orders:select-attachment', async (_event, kind = 'order
     });
     if(result.canceled || !result.filePaths?.[0]) return {ok:false,canceled:true};
     const source=result.filePaths[0];
+    if(centralClient.publicStatus().enabled){
+      const attachment=await centralClient.uploadFile(source,path.basename(source));
+      return {ok:true,attachment};
+    }
     const attachmentDir=path.join(database.paths().dataDir,'purchase-order-attachments');
     fs.mkdirSync(attachmentDir,{recursive:true});
     const ext=path.extname(source).toLowerCase();
@@ -240,9 +245,14 @@ ipcMain.handle('purchase-orders:select-attachment', async (_event, kind = 'order
   }
 });
 
-ipcMain.handle('purchase-orders:open-attachment', async (_event, filePath) => {
+ipcMain.handle('purchase-orders:open-attachment', async (_event, attachment) => {
   try {
-    const resolved=path.resolve(String(filePath||''));
+    if(attachment?.remote&&attachment?.id){
+      const downloaded=await centralClient.downloadAttachment(attachment.id,attachment.name);
+      const error=await shell.openPath(downloaded);
+      return error?{ok:false,error}:{ok:true};
+    }
+    const resolved=path.resolve(String(attachment?.path||attachment||''));
     if(!fs.existsSync(resolved)) return {ok:false,error:'الملف المرفق غير موجود في مكانه المحفوظ.'};
     const error=await shell.openPath(resolved);
     return error?{ok:false,error}:{ok:true};
@@ -254,6 +264,12 @@ ipcMain.handle('purchase-orders:open-attachment', async (_event, filePath) => {
 ipcMain.handle('desktop:get-state', async () => {
   try {
     await database.initialize();
+    if(centralClient.publicStatus().enabled){
+      const remote=await centralClient.loadState();
+      database.saveState(remote.state,{source:'central-cache-load'});
+      const local=database.getStorageInfo();
+      return {ok:true,state:remote.state,storageInfo:{backend:'postgresql',schemaVersion:'central-1',lastSavedAt:remote.updatedAt,summary:database.getStateSummary(remote.state),localCachePath:local.databasePath,...centralClient.publicStatus()}};
+    }
     const storageInfo = database.getStorageInfo();
     if (storageInfo?.migration?.failed) {
       return { ok:false, error:storageInfo.migration.error || 'تعذر ترقية البيانات القديمة إلى قاعدة البيانات.', storageInfo };
@@ -261,13 +277,20 @@ ipcMain.handle('desktop:get-state', async () => {
     return { ok:true, state:database.loadState(), storageInfo };
   } catch (error) {
     console.error('Failed to load SQLite app state:', error);
-    return { ok:false, error:error.message };
+    const central=centralClient.publicStatus();
+    return {ok:false,error:error.message,storageInfo:central.enabled?{backend:'postgresql',schemaVersion:'central-1',...central}:null};
   }
 });
 
 ipcMain.handle('desktop:save-state', async (_event, state) => {
   try {
     await database.initialize();
+    if(centralClient.publicStatus().enabled){
+      const result=await centralClient.saveState(state);
+      if(!result.ok)return result;
+      database.saveState(result.state,{source:'central-cache-save'});
+      return {ok:true,state:result.state,revision:result.revision,merged:result.merged,summary:database.getStateSummary(result.state)};
+    }
     const summary = database.saveState(state, { source: 'renderer-state' });
     return { ok: true, summary };
   } catch (error) {
@@ -279,11 +302,35 @@ ipcMain.handle('desktop:save-state', async (_event, state) => {
 ipcMain.handle('desktop:get-storage-info', async () => {
   try {
     await database.initialize();
+    if(centralClient.publicStatus().enabled){
+      const local=database.getStorageInfo();
+      return {ok:true,backend:'postgresql',schemaVersion:'central-1',summary:local.summary,localCachePath:local.databasePath,...centralClient.publicStatus()};
+    }
     return { ok: true, ...database.getStorageInfo() };
   } catch (error) {
     return { ok: false, error: error.message };
   }
 });
+
+ipcMain.handle('central:get-status',()=>({ok:true,...centralClient.publicStatus()}));
+ipcMain.handle('central:configure',async(_event,serverUrl)=>{try{const status=centralClient.configure(serverUrl);const health=await centralClient.health();return {ok:true,...status,health};}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
+ipcMain.handle('central:login',async(_event,credentials)=>{try{return await centralClient.login(credentials?.username,credentials?.password)}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
+ipcMain.handle('central:migrate-local',async()=>{try{
+  await database.initialize();
+  const backup=await database.createBackup('before-central-migration',true);
+  if(!backup?.ok)throw new Error(backup?.error||'تعذر إنشاء نسخة أمان قبل النقل.');
+  const localState=database.loadState();
+  const result=await centralClient.importState(localState);
+  database.saveState(result.state,{source:'central-initial-cache'});
+  return {ok:true,state:result.state,backupPath:backup.path,attachmentsBackupPath:backup.attachmentsPath,storageInfo:{backend:'postgresql',schemaVersion:'central-1',summary:database.getStateSummary(result.state),localCachePath:database.getStorageInfo().databasePath,...centralClient.publicStatus()}};
+}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
+ipcMain.handle('central:activate-existing',async()=>{try{const result=await centralClient.loadState();centralClient.setEnabled(true);await database.initialize();database.saveState(result.state,{source:'central-existing-cache'});return {ok:true,state:result.state,storageInfo:{backend:'postgresql',schemaVersion:'central-1',summary:database.getStateSummary(result.state),localCachePath:database.getStorageInfo().databasePath,...centralClient.publicStatus()}}}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
+ipcMain.handle('central:disable',async(_event,options={})=>{try{
+  await database.initialize();
+  if(centralClient.publicStatus().enabled&&!options.force){const remote=await centralClient.loadState();database.saveState(remote.state,{source:'central-disable-snapshot'});await database.createBackup('central-disable',true);}
+  centralClient.setEnabled(false);return {ok:true,state:database.loadState(),storageInfo:database.getStorageInfo(),...centralClient.publicStatus()};
+}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
+ipcMain.handle('central:sync-state',async(_event,state)=>{try{if(!centralClient.publicStatus().enabled)return {ok:true,unchanged:true};const result=await centralClient.syncState(state);if(result.ok&&result.state){await database.initialize();database.saveState(result.state,{source:'central-sync-cache'});}return result}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
 
 ipcMain.handle('desktop:backup-now', async () => {
   try {

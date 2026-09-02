@@ -7,13 +7,16 @@ let latestUpdateInfo = null;
 let downloadedUpdatePath = '';
 
 const settingsPath = () => path.join(app.getPath('userData'), 'update-settings.json');
-const defaults = { owner:'', repo:'Financial-Reports-Manager', autoCheck:true };
+const defaults = { owner:'Yahiaza', repo:'Finance---Loan', autoCheck:true };
 
 function readSettings(){
   try{
     if(!fs.existsSync(settingsPath())) return {...defaults};
     const parsed=JSON.parse(fs.readFileSync(settingsPath(),'utf8'));
-    return {...defaults,...parsed,autoCheck:parsed?.autoCheck!==false};
+    const migrated={...parsed};
+    if(!String(migrated.owner||'').trim())migrated.owner=defaults.owner;
+    if(!String(migrated.repo||'').trim()||migrated.repo==='Financial-Reports-Manager')migrated.repo=defaults.repo;
+    return {...defaults,...migrated,autoCheck:migrated.autoCheck!==false};
   }catch{return {...defaults};}
 }
 function saveSettings(value={}){

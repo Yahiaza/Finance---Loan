@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { money, uid, pad, toISO, todayISO, refreshTodayISO, displayDate, isOnOrBefore, cleanLegacyNotes, arabicDayDate, parseAmount, formatAmountInput, requestConfirm, confirmDelete } from './utils/appUtils.js';
 import { normalizeState, loadState } from './store/state.js';
 import { buildPrintPreviewHtml } from './print/preview.js';
@@ -34,7 +34,11 @@ function App() {
   const [sectionEditing,setSectionEditing] = useState({reports:false,pending:false,purchaseOrders:false,banks:false,loans:false,settings:false,companies:false,suppliers:false});
   const [toast,setToast] = useState(null);
   const [storageInfo,setStorageInfo] = useState(null);
-  const [updateStatus,setUpdateStatus] = useState({currentVersion:'3.3.0',source:{owner:'',repo:'Financial-Reports-Manager',autoCheck:true},configured:false,checked:false,progress:0,downloading:false,downloadedPath:''});
+  const [updateStatus,setUpdateStatus] = useState({currentVersion:'4.0.0',source:{owner:'Yahiaza',repo:'Finance---Loan',autoCheck:true},configured:true,checked:false,progress:0,downloading:false,downloadedPath:''});
+  const [centralStatus,setCentralStatus]=useState({enabled:false,configured:false,authenticated:false,connected:false,serverUrl:'',username:'',revision:null});
+  const stateRef=useRef(state);
+  const centralSyncBusy=useRef(false);
+  useEffect(()=>{stateRef.current=state;},[state]);
 
   // Keep the app date alive while Electron stays open across midnight.
   // If the user is currently viewing "today", move to the new day automatically.
@@ -89,6 +93,14 @@ function App() {
   },[theme]);
 
   useEffect(()=>{
+    window.desktopApp?.getCentralStatus?.().then(result=>{if(result?.ok)setCentralStatus(s=>({...s,...result,connected:result.enabled?s.connected:false}));}).catch(()=>{});
+  },[]);
+
+  useEffect(()=>{
+    if(centralStatus.enabled&&!centralStatus.connected)setSectionEditing(current=>Object.fromEntries(Object.keys(current).map(key=>[key,false])));
+  },[centralStatus.enabled,centralStatus.connected]);
+
+  useEffect(()=>{
     window.__financialAppConfirm = options => new Promise(resolve=>{
       const returnFocus=document.activeElement;
       setConfirmDialog({...options,resolve,returnFocus});
@@ -121,6 +133,7 @@ function App() {
         if (!alive) return;
         if (!result?.ok) {
           setStorageInfo(result?.storageInfo || null);
+          if(result?.storageInfo?.backend==='postgresql')setCentralStatus(s=>({...s,...result.storageInfo,enabled:true,connected:false}));
           setToast({
             tone:'error',
             title:'تعذر تشغيل قاعدة البيانات',
@@ -130,6 +143,7 @@ function App() {
         }
 
         setStorageInfo(result.storageInfo || null);
+        if(result.storageInfo?.backend==='postgresql')setCentralStatus(s=>({...s,...result.storageInfo,enabled:true,connected:true}));
         if (result.state) {
           setState(normalizeState(result.state));
         } else {
@@ -173,17 +187,45 @@ function App() {
       window.desktopApp.saveState(state).then(result => {
         if (result && !result.ok) {
           console.error('Desktop data save failed:', result.error);
-          setToast({tone:'error',title:'تعذر حفظ البيانات',message:result.error || 'لم يتم حفظ آخر تعديل في قاعدة البيانات.'});
+          if(result.conflict&&result.state){
+            setState(normalizeState(result.state));
+            setToast({tone:'error',title:'تعارض تعديل آمن',message:`عدل مستخدم آخر نفس البيانات؛ تم تحميل نسخة السيرفر وحفظ نسخة من تعديلك للمراجعة${result.conflictPath?` في: ${result.conflictPath}`:''}.`});
+          }else{
+            setCentralStatus(s=>s.enabled?{...s,connected:false}:s);
+            setToast({tone:'error',title:'تعذر حفظ البيانات',message:result.error || 'لم يتم حفظ آخر تعديل في قاعدة البيانات.'});
+          }
         } else if(result?.ok) {
+          setCentralStatus(s=>s.enabled?{...s,connected:true,revision:result.revision??s.revision}:s);
+          if(result.state&&JSON.stringify(result.state)!==JSON.stringify(stateRef.current))setState(normalizeState(result.state));
           setStorageInfo(info=>info?{...info,summary:result.summary||info.summary,lastSavedAt:new Date().toISOString()}:info);
         }
       }).catch(error => {
         console.error('Desktop data save failed:', error);
         setToast({tone:'error',title:'تعذر حفظ البيانات',message:error.message || 'حدث خطأ أثناء الحفظ في قاعدة البيانات.'});
       });
-    }, 250);
+    }, 700);
     return () => clearTimeout(timer);
   }, [state, desktopStorageReady]);
+
+  useEffect(()=>{
+    if(!centralStatus.enabled||!desktopStorageReady||!window.desktopApp?.syncCentralState)return;
+    const timer=setInterval(async()=>{
+      if(centralSyncBusy.current)return;
+      centralSyncBusy.current=true;
+      try{
+        const result=await window.desktopApp.syncCentralState(stateRef.current);
+        if(result?.ok){
+          setCentralStatus(s=>({...s,connected:true,revision:result.revision??s.revision}));
+          if(result.state&&JSON.stringify(result.state)!==JSON.stringify(stateRef.current))setState(normalizeState(result.state));
+        }else if(result?.conflict&&result.state){
+          setState(normalizeState(result.state));
+          setToast({tone:'error',title:'تم منع تعارض بين المستخدمين',message:'تم تحميل أحدث بيانات السيرفر، وحُفظ التعديل المتعارض في ملف مراجعة محلي.'});
+        }else setCentralStatus(s=>({...s,connected:false}));
+      }catch{setCentralStatus(s=>({...s,connected:false}));}
+      finally{centralSyncBusy.current=false;}
+    },5000);
+    return()=>clearInterval(timer);
+  },[centralStatus.enabled,desktopStorageReady]);
 
 
   // V3.1.0: GitHub Releases updater for the Portable build.
@@ -451,8 +493,9 @@ function App() {
     {window.desktopApp?.isElectron && <DesktopTitleBar/>}
     <Sidebar page={page} setPage={setPage} theme={theme} onToggleTheme={()=>setTheme(t=>t==='dark'?'light':'dark')}/>
     <main className="content">
+      {centralStatus.enabled&&!centralStatus.connected&&<div className="central-offline-banner">تعذر الاتصال بالسيرفر المركزي — تم إيقاف التعديل لحماية البيانات. افتح «الإعدادات والأقسام» لمراجعة الاتصال.</div>}
       <DateHeader selectedDate={selectedDate} setSelectedDate={setSelectedDate} shiftDay={shiftDay} onExport={exportJson} onImport={importJson}
-        showEditActions={['reports','pending','purchaseOrders','banks','loans','settings','companies','suppliers'].includes(page)}
+        showEditActions={['reports','pending','purchaseOrders','banks','loans','settings','companies','suppliers'].includes(page)&&(!centralStatus.enabled||(centralStatus.connected&&centralStatus.user?.role!=='viewer'))}
         isSectionEditing={Boolean(sectionEditing[page])}
         onEditSection={()=>setSectionEditing(s=>({...s,[page]:true}))}
         onSaveSection={()=>{
@@ -471,6 +514,12 @@ function App() {
         {page==='loanStats' && <LoansOverviewPage loans={state.loans} onPrint={(mode='loan-overview')=>printReport(mode)}/>}
         {page==='banks' && <BankBalancesPage banks={state.banks} departments={state.departments} selectedDate={selectedDate} isEditing={sectionEditing.banks} onChange={banks=>setState(s=>({...s,banks}))} onPrint={()=>printReport('banks')} onNotify={setToast}/>}
         {page==='settings' && <SettingsPage departments={state.departments} isEditing={sectionEditing.settings} onChange={departments=>setState(s=>({...s,departments}))} storageInfo={storageInfo} updateStatus={updateStatus}
+          centralStatus={centralStatus}
+          onConfigureCentral={async url=>{const r=await window.desktopApp?.configureCentralServer?.(url);setCentralStatus(s=>({...s,...r,connected:false}));setToast(r?.ok?{tone:'success',title:'تم الوصول إلى السيرفر',message:'العنوان صحيح. سجل الدخول الآن.'}:{tone:'error',title:'تعذر الوصول إلى السيرفر',message:r?.error||'تحقق من العنوان والشبكة.'});return Boolean(r?.ok);}}
+          onLoginCentral={async credentials=>{const r=await window.desktopApp?.loginCentralServer?.(credentials);setCentralStatus(s=>({...s,...r,connected:r?.enabled?s.connected:false}));setToast(r?.ok?{tone:'success',title:'تم تسجيل الدخول',message:r.enabled?'تم تجديد جلسة الاتصال، وسيتم تحديث البيانات تلقائيًا.':`مرحبًا ${r.user?.displayName||r.user?.username||''}. اختر نقل البيانات أو استخدام بيانات السيرفر.`}:{tone:'error',title:'فشل تسجيل الدخول',message:r?.error||'تحقق من البيانات.'});return Boolean(r?.ok);}}
+          onMigrateCentral={async()=>{if(!(await requestConfirm('سيتم إنشاء نسخة احتياطية من SQLite ومرفقاتها ثم نقل البيانات والمرفقات إلى السيرفر. يجب تنفيذ هذا الإجراء مرة واحدة فقط. هل تريد المتابعة؟',{title:'نقل البيانات إلى PostgreSQL',confirmText:'إنشاء نسخة ونقل البيانات',cancelText:'إلغاء'})))return;const r=await window.desktopApp?.migrateLocalToCentral?.();if(r?.ok){setState(normalizeState(r.state));setStorageInfo(r.storageInfo);setCentralStatus(s=>({...s,...r.storageInfo,enabled:true,connected:true}));setDesktopStorageReady(true);setToast({tone:'success',title:'تم نقل البيانات وتفعيل السيرفر',message:`احتُفظ بنسخة SQLite في: ${r.backupPath}${r.attachmentsBackupPath?` ونسخة المرفقات في: ${r.attachmentsBackupPath}`:''}`});}else setToast({tone:'error',title:'لم يتم نقل البيانات',message:r?.error||'لم تتغير قاعدة SQLite.'});}}
+          onActivateCentral={async()=>{if(!(await requestConfirm('سيتم استخدام بيانات السيرفر بدل البيانات المحلية على هذا الجهاز. هل تريد المتابعة؟',{title:'ربط جهاز إضافي',confirmText:'استخدام بيانات السيرفر',cancelText:'إلغاء'})))return;const r=await window.desktopApp?.activateExistingCentral?.();if(r?.ok){setState(normalizeState(r.state));setStorageInfo(r.storageInfo);setCentralStatus(s=>({...s,...r.storageInfo,enabled:true,connected:true}));setDesktopStorageReady(true);setToast({tone:'success',title:'تم ربط الجهاز',message:'هذا الجهاز يعمل الآن على قاعدة PostgreSQL المشتركة.'});}else setToast({tone:'error',title:'تعذر ربط الجهاز',message:r?.error||'تحقق من السيرفر.'});}}
+          onDisableCentral={async()=>{const emergency=centralStatus.enabled&&!centralStatus.connected;const message=emergency?'السيرفر غير متاح. سيتم الرجوع إلى آخر نسخة محلية محفوظة وقد لا تحتوي على أحدث تعديلات المستخدم الآخر. هل تريد فصل الطوارئ؟':'سيتم أخذ أحدث نسخة من السيرفر وحفظها في SQLite ثم إيقاف الاتصال المشترك على هذا الجهاز فقط. هل تريد المتابعة؟';if(!(await requestConfirm(message,{title:emergency?'فصل طوارئ':'العودة إلى الوضع المحلي',confirmText:emergency?'استخدام النسخة المحلية':'حفظ نسخة والعودة',cancelText:'إلغاء'})))return;const r=await window.desktopApp?.disableCentralServer?.({force:emergency});if(r?.ok){setState(normalizeState(r.state));setStorageInfo(r.storageInfo);setCentralStatus(s=>({...s,...r,enabled:false,connected:false}));setToast({tone:'success',title:'تم الرجوع إلى SQLite',message:emergency?'تم تشغيل آخر نسخة طوارئ محلية.':'تم حفظ أحدث بيانات السيرفر محليًا قبل فصل الاتصال.'});}else setToast({tone:'error',title:'تعذر إيقاف الاتصال',message:r?.error||'لم يتم تغيير وضع التخزين.'});}}
           onCheckUpdate={checkForUpdate} onDownloadUpdate={downloadUpdate} onSaveUpdateSettings={saveUpdateSettings}
           onShowUpdateFile={async()=>{const r=await window.desktopApp?.showDownloadedUpdate?.();if(!r?.ok)setToast({tone:'error',title:'ملف التحديث غير موجود',message:'أعد تنزيل التحديث ثم حاول مرة أخرى.'});}}
           onLaunchUpdate={async()=>{if(!(await requestConfirm('سيتم إنشاء نسخة احتياطية ثم تشغيل النسخة الجديدة وإغلاق البرنامج الحالي. هل تريد المتابعة؟',{title:'تشغيل التحديث',confirmText:'تشغيل التحديث',cancelText:'إلغاء'})))return;const r=await window.desktopApp?.launchDownloadedUpdate?.();if(!r?.ok)setToast({tone:'error',title:'تعذر تشغيل التحديث',message:r?.message||r?.error||'تعذر فتح ملف التحديث.'});}}

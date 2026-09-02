@@ -1,0 +1,14 @@
+{
+  "name": "finance-central-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Central PostgreSQL API for Financial Reports Manager",
+  "main": "central-server.cjs",
+  "scripts": {
+    "start": "node central-server.cjs",
+    "create-user": "node create-user.cjs"
+  },
+  "dependencies": {
+    "pg": "8.23.0"
+  }
+}

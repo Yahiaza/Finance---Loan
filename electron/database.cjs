@@ -562,11 +562,20 @@ function copyLegacyJsonForMigration(sourcePath) {
 async function createBackup(kind = 'daily', force = false) {
   const database = openDatabase();
   if (!hasState()) return { ok:false, reason:'empty' };
-  if (backupInFlight) return backupInFlight;
+  if (backupInFlight) {
+    if (kind === 'before-central-migration' || kind === 'central-disable') {
+      await backupInFlight;
+      return createBackup(kind, force);
+    }
+    return backupInFlight;
+  }
 
   const p = ensureDirectories();
+  const backupStamp = stamp();
   let target;
   if (kind === 'migration') target = path.join(p.migrationDir, `finance-after-migration-${stamp()}.db`);
+  else if (kind === 'before-central-migration') target = path.join(p.migrationDir, `finance-before-central-${backupStamp}.db`);
+  else if (kind === 'central-disable') target = path.join(p.migrationDir, `finance-central-disable-${backupStamp}.db`);
   else if (kind === 'manual') target = path.join(p.backupsDir, `finance-manual-${stamp()}.db`);
   else target = path.join(p.dailyDir, `finance-${isoDay()}.db`);
 
@@ -574,11 +583,19 @@ async function createBackup(kind = 'daily', force = false) {
 
   backupInFlight = backup(database, target, { rate: 100 })
     .then(() => {
+      let attachmentsPath = null;
+      if (kind === 'before-central-migration') {
+        const sourceAttachments = path.join(p.dataDir, 'purchase-order-attachments');
+        if (fs.existsSync(sourceAttachments)) {
+          attachmentsPath = path.join(p.migrationDir, `purchase-order-attachments-before-central-${backupStamp}`);
+          fs.cpSync(sourceAttachments, attachmentsPath, { recursive:true, errorOnExist:true });
+        }
+      }
       lastBackupAt = Date.now();
       setMeta('last_backup_at', new Date().toISOString());
       setMeta('last_backup_path', target);
       cleanupDailyBackups(30);
-      return { ok:true, path:target };
+      return { ok:true, path:target, attachmentsPath };
     })
     .catch(error => ({ ok:false, error:error.message }))
     .finally(() => { backupInFlight = null; });

@@ -1,6 +1,6 @@
 {
   "name": "financial-reports-manager",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "private": true,
   "description": "Arabic RTL financial desktop manager with native Electron persistence",
   "main": "electron/main.cjs",

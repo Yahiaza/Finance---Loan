@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Database, ShieldCheck, HardDrive, RefreshCw, FolderOpen, MoveRight, DatabaseBackup } from 'lucide-react';
+import { Plus, Trash2, Database, ShieldCheck, HardDrive, RefreshCw, FolderOpen, MoveRight, DatabaseBackup, Server, LogIn, Unplug, UploadCloud } from 'lucide-react';
 import { confirmDelete } from '../../utils/appUtils.js';
 
 const dateTimeText = value => {
@@ -8,15 +8,20 @@ const dateTimeText = value => {
   catch{return String(value);}
 };
 
-function SettingsPage({departments,onChange,isEditing=false,storageInfo=null,onBackupNow,onMoveDatabase,onSelectDatabase,onChangeBackupLocation,updateStatus=null,onCheckUpdate,onDownloadUpdate,onShowUpdateFile,onLaunchUpdate,onSaveUpdateSettings}) {
+function SettingsPage({departments,onChange,isEditing=false,storageInfo=null,onBackupNow,onMoveDatabase,onSelectDatabase,onChangeBackupLocation,updateStatus=null,onCheckUpdate,onDownloadUpdate,onShowUpdateFile,onLaunchUpdate,onSaveUpdateSettings,centralStatus=null,onConfigureCentral,onLoginCentral,onMigrateCentral,onActivateCentral,onDisableCentral}) {
   const [newDep,setNewDep]=useState('');
   const [backingUp,setBackingUp]=useState(false);
   const [storageBusy,setStorageBusy]=useState('');
   const [updateBusy,setUpdateBusy]=useState('');
   const [updateOwner,setUpdateOwner]=useState(updateStatus?.source?.owner||'');
-  const [updateRepo,setUpdateRepo]=useState(updateStatus?.source?.repo||'Financial-Reports-Manager');
+  const [updateRepo,setUpdateRepo]=useState(updateStatus?.source?.repo||'Finance---Loan');
   const [autoCheck,setAutoCheck]=useState(updateStatus?.source?.autoCheck!==false);
-  React.useEffect(()=>{setUpdateOwner(updateStatus?.source?.owner||'');setUpdateRepo(updateStatus?.source?.repo||'Financial-Reports-Manager');setAutoCheck(updateStatus?.source?.autoCheck!==false);},[updateStatus?.source?.owner,updateStatus?.source?.repo,updateStatus?.source?.autoCheck]);
+  const [centralUrl,setCentralUrl]=useState(centralStatus?.serverUrl||'http://192.168.1.50:5050');
+  const [centralUsername,setCentralUsername]=useState(centralStatus?.username||'');
+  const [centralPassword,setCentralPassword]=useState('');
+  const [centralBusy,setCentralBusy]=useState('');
+  React.useEffect(()=>{setUpdateOwner(updateStatus?.source?.owner||'Yahiaza');setUpdateRepo(updateStatus?.source?.repo||'Finance---Loan');setAutoCheck(updateStatus?.source?.autoCheck!==false);},[updateStatus?.source?.owner,updateStatus?.source?.repo,updateStatus?.source?.autoCheck]);
+  React.useEffect(()=>{if(centralStatus?.serverUrl)setCentralUrl(centralStatus.serverUrl);if(centralStatus?.username)setCentralUsername(centralStatus.username);},[centralStatus?.serverUrl,centralStatus?.username]);
   const add=()=>{const v=newDep.trim();if(v&&!departments.includes(v)){onChange([...departments,v]);setNewDep('')}};
   const doBackup=async()=>{
     if(!onBackupNow||backingUp)return;
@@ -56,15 +61,24 @@ function SettingsPage({departments,onChange,isEditing=false,storageInfo=null,onB
       <div className="database-storage-note"><ShieldCheck size={16}/><div><strong>حماية من فورمات C:</strong><span>انقل قاعدة البيانات إلى D: واختر مجلد النسخ الاحتياطي على D: أو وسيط آخر. بعد فورمات Windows يمكنك استخدام «اختيار قاعدة موجودة» وربط البرنامج بملف finance.db القديم مباشرة.</span></div></div>
     </div>}
 
+    <div className="settings-card central-server-card">
+      <div className="central-server-head"><div className="central-server-icon"><Server/></div><div><h3>قاعدة البيانات المشتركة</h3><p>اتصال بخدمة PostgreSQL الموجودة على جهاز السيرفر</p></div><span className={`central-status-pill ${centralStatus?.enabled?(centralStatus?.connected?'online':'offline'):'local'}`}>{centralStatus?.enabled?(centralStatus?.connected?'متصل ومفعّل':'الاتصال متوقف'):'الوضع المحلي'}</span></div>
+      <div className="central-config-grid"><label><span>عنوان السيرفر</span><input value={centralUrl} disabled={centralStatus?.enabled} onChange={e=>setCentralUrl(e.target.value)} placeholder="http://192.168.1.50:5050"/></label><button className="btn" disabled={centralBusy||centralStatus?.enabled} onClick={async()=>{setCentralBusy('configure');try{await onConfigureCentral?.(centralUrl);}finally{setCentralBusy('')}}}>{centralBusy==='configure'?<RefreshCw className="spin"/>:<Server/>} حفظ واختبار العنوان</button></div>
+      {(!centralStatus?.enabled||!centralStatus?.connected)&&<div className="central-login-grid"><label><span>اسم المستخدم</span><input value={centralUsername} onChange={e=>setCentralUsername(e.target.value)} autoComplete="username"/></label><label><span>كلمة المرور</span><input type="password" value={centralPassword} onChange={e=>setCentralPassword(e.target.value)} autoComplete="current-password"/></label><button className="btn primary" disabled={centralBusy||!centralUsername||!centralPassword} onClick={async()=>{setCentralBusy('login');try{const ok=await onLoginCentral?.({username:centralUsername,password:centralPassword});if(ok)setCentralPassword('');}finally{setCentralBusy('')}}}><LogIn/> {centralStatus?.enabled?'إعادة تسجيل الدخول':'تسجيل الدخول'}</button></div>}
+      {centralStatus?.authenticated&&!centralStatus?.enabled&&<div className="central-activation-box"><div><ShieldCheck/><span><strong>تم تسجيل الدخول بنجاح</strong><small>اختر إجراءً واحدًا حسب هذا الجهاز.</small></span></div><div className="central-activation-actions"><button className="btn primary" disabled={centralBusy} onClick={async()=>{setCentralBusy('migrate');try{await onMigrateCentral?.();}finally{setCentralBusy('')}}}><UploadCloud/> هذا الجهاز الرئيسي: نقل SQLite</button><button className="btn" disabled={centralBusy} onClick={async()=>{setCentralBusy('activate');try{await onActivateCentral?.();}finally{setCentralBusy('')}}}><Server/> جهاز إضافي: استخدام بيانات السيرفر</button></div><p>استخدم «نقل SQLite» مرة واحدة فقط على الجهاز الذي يحتوي على البيانات الأصلية. السيرفر يرفض النقل إذا كانت لديه بيانات مسبقًا.</p></div>}
+      {centralStatus?.enabled&&<div className="central-active-box"><div><ShieldCheck/><span><strong>البرنامج يعمل على PostgreSQL المشتركة</strong><small>{centralStatus.serverUrl} — المستخدم: {centralStatus.username||'—'} — المراجعة: {centralStatus.revision??'—'}</small></span></div><button className="btn central-disable-btn" disabled={centralBusy} onClick={async()=>{setCentralBusy('disable');try{await onDisableCentral?.();}finally{setCentralBusy('')}}}><Unplug/> {centralStatus.connected?'إيقاف الاتصال والعودة إلى SQLite':'فصل طوارئ للنسخة المحلية'}</button></div>}
+      <div className="central-safety-note"><DatabaseBackup/><span><strong>SQLite لن تُحذف:</strong> قبل النقل ينشئ البرنامج نسخة احتياطية، وبعد التفعيل يحتفظ بقاعدة محلية كنسخة طوارئ.</span></div>
+    </div>
+
     <div className="settings-card updater-card">
       <div className="updater-head">
         <div className="updater-icon"><RefreshCw size={22}/></div>
         <div><h3>التحديثات التلقائية</h3><p>فحص GitHub Releases وتنزيل أحدث نسخة Portable بدون التأثير على قاعدة البيانات.</p></div>
-        <span className="update-version-pill">V{updateStatus?.currentVersion||'3.1.0'}</span>
+        <span className="update-version-pill">V{updateStatus?.currentVersion||'4.0.0'}</span>
       </div>
       <div className="update-source-grid">
         <label><span><Database size={14}/> حساب GitHub</span><input value={updateOwner} onChange={e=>setUpdateOwner(e.target.value)} placeholder="مثال: username"/></label>
-        <label><span>اسم المستودع</span><input value={updateRepo} onChange={e=>setUpdateRepo(e.target.value)} placeholder="Financial-Reports-Manager"/></label>
+        <label><span>اسم المستودع</span><input value={updateRepo} onChange={e=>setUpdateRepo(e.target.value)} placeholder="Finance---Loan"/></label>
         <label className="update-auto-check"><input type="checkbox" checked={autoCheck} onChange={e=>setAutoCheck(e.target.checked)}/><span>البحث تلقائيًا عن تحديث عند تشغيل البرنامج</span></label>
         <button className="btn" disabled={updateBusy==='save'} onClick={async()=>{if(!onSaveUpdateSettings)return;setUpdateBusy('save');try{await onSaveUpdateSettings({owner:updateOwner,repo:updateRepo,autoCheck});}finally{setUpdateBusy('');}}}>{updateBusy==='save'?<RefreshCw className="spin" size={15}/>:<ShieldCheck size={15}/>} حفظ مصدر التحديث</button>
       </div>
