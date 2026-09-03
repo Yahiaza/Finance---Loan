@@ -81,7 +81,7 @@ function SettingsPage({departments,onChange,isEditing=false,storageInfo=null,onB
       <div className="updater-head">
         <div className="updater-icon"><RefreshCw size={22}/></div>
         <div><h3>التحديثات التلقائية</h3><p>فحص GitHub Releases وتنزيل أحدث نسخة Portable بدون التأثير على قاعدة البيانات.</p></div>
-        <span className="update-version-pill">V{updateStatus?.currentVersion||'4.1.1'}</span>
+        <span className="update-version-pill">V{updateStatus?.currentVersion||'4.1.2'}</span>
       </div>
       <div className="update-source-grid">
         <label><span><Database size={14}/> حساب GitHub</span><input value={updateOwner} onChange={e=>setUpdateOwner(e.target.value)} placeholder="مثال: username"/></label>

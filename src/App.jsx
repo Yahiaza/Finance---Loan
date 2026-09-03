@@ -34,7 +34,7 @@ function App() {
   const [sectionEditing,setSectionEditing] = useState({reports:false,pending:false,purchaseOrders:false,banks:false,loans:false,settings:false,companies:false,suppliers:false});
   const [toast,setToast] = useState(null);
   const [storageInfo,setStorageInfo] = useState(null);
-  const [updateStatus,setUpdateStatus] = useState({currentVersion:'4.1.1',source:{owner:'Yahiaza',repo:'Finance---Loan',autoCheck:true},configured:true,checked:false,progress:0,downloading:false,downloadedPath:''});
+  const [updateStatus,setUpdateStatus] = useState({currentVersion:'4.1.2',source:{owner:'Yahiaza',repo:'Finance---Loan',autoCheck:true},configured:true,checked:false,progress:0,downloading:false,downloadedPath:''});
   const [centralStatus,setCentralStatus]=useState({enabled:false,configured:false,authenticated:false,connected:false,serverUrl:'',username:'',revision:null});
   const [accessStatus,setAccessStatus]=useState({enabled:false,configured:false,connected:false,databasePath:'',revision:null});
   const stateRef=useRef(state);

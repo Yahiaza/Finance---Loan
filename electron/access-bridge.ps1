@@ -12,9 +12,9 @@ function Write-Result([hashtable]$Value) {
   [System.IO.File]::WriteAllText($OutputPath, $json, [System.Text.UTF8Encoding]::new($false))
 }
 
-function Add-Parameter($Command, [System.Data.OleDb.OleDbType]$Type, $Value) {
+function Add-Parameter($Command, [System.Data.Odbc.OdbcType]$Type, $Value) {
   $parameter = $Command.Parameters.Add('@value', $Type)
-  if ($Type -eq [System.Data.OleDb.OleDbType]::LongVarWChar) { $parameter.Size = [Math]::Max(1, ([string]$Value).Length) }
+  if ($Type -eq [System.Data.Odbc.OdbcType]::NText) { $parameter.Size = [Math]::Max(1, ([string]$Value).Length) }
   $parameter.Value = $Value
 }
 
@@ -55,8 +55,8 @@ try {
 
   if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) { throw 'The selected Access database does not exist.' }
 
-  $connectionString = "Provider=Microsoft.ACE.OLEDB.16.0;Data Source=$databasePath;Mode=Share Deny None;Persist Security Info=False;"
-  $connection = New-Object System.Data.OleDb.OleDbConnection($connectionString)
+  $connectionString = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=$databasePath;"
+  $connection = New-Object System.Data.Odbc.OdbcConnection($connectionString)
   $connection.Open()
 
   try {
@@ -65,8 +65,7 @@ try {
     [void]$probe.ExecuteScalar()
     $probe.Dispose()
   } catch {
-    $restrictions = New-Object object[] 4
-    $tables = $connection.GetOleDbSchemaTable([System.Data.OleDb.OleDbSchemaGuid]::Tables, $restrictions)
+    $tables = $connection.GetSchema('Tables')
     $userTables = @($tables.Rows | Where-Object { $_.TABLE_TYPE -eq 'TABLE' -and $_.TABLE_NAME -notlike 'MSys*' })
     if ($userTables.Count -gt 0) { throw 'The selected Access file contains other tables. Choose a new blank .accdb file.' }
     $create = $connection.CreateCommand()
@@ -75,10 +74,10 @@ try {
     $create.Dispose()
     $insert = $connection.CreateCommand()
     $insert.CommandText = 'INSERT INTO FinanceState (Id, Revision, StateJson, UpdatedAt) VALUES (?, ?, ?, ?)'
-    Add-Parameter $insert ([System.Data.OleDb.OleDbType]::Integer) 1
-    Add-Parameter $insert ([System.Data.OleDb.OleDbType]::Integer) 0
-    Add-Parameter $insert ([System.Data.OleDb.OleDbType]::LongVarWChar) '{}'
-    Add-Parameter $insert ([System.Data.OleDb.OleDbType]::Date) ([datetime]::Now)
+    Add-Parameter $insert ([System.Data.Odbc.OdbcType]::Int) 1
+    Add-Parameter $insert ([System.Data.Odbc.OdbcType]::Int) 0
+    Add-Parameter $insert ([System.Data.Odbc.OdbcType]::NText) '{}'
+    Add-Parameter $insert ([System.Data.Odbc.OdbcType]::DateTime) ([datetime]::Now)
     [void]$insert.ExecuteNonQuery()
     $insert.Dispose()
   }
@@ -94,10 +93,10 @@ try {
       $update = $connection.CreateCommand()
       $update.Transaction = $transaction
       $update.CommandText = 'UPDATE FinanceState SET Revision=?, StateJson=?, UpdatedAt=? WHERE Id=1 AND Revision=?'
-      Add-Parameter $update ([System.Data.OleDb.OleDbType]::Integer) $nextRevision
-      Add-Parameter $update ([System.Data.OleDb.OleDbType]::LongVarWChar) ([string]$request.stateJson)
-      Add-Parameter $update ([System.Data.OleDb.OleDbType]::Date) ([datetime]::Now)
-      Add-Parameter $update ([System.Data.OleDb.OleDbType]::Integer) $baseRevision
+      Add-Parameter $update ([System.Data.Odbc.OdbcType]::Int) $nextRevision
+      Add-Parameter $update ([System.Data.Odbc.OdbcType]::NText) ([string]$request.stateJson)
+      Add-Parameter $update ([System.Data.Odbc.OdbcType]::DateTime) ([datetime]::Now)
+      Add-Parameter $update ([System.Data.Odbc.OdbcType]::Int) $baseRevision
       $affected = $update.ExecuteNonQuery()
       $update.Dispose()
       if ($affected -ne 1) {
