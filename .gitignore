@@ -5,3 +5,6 @@ server/data/
 dist/
 release/
 *.log
+*.accdb
+*.laccdb
+*.finance.lock

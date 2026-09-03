@@ -4,6 +4,7 @@ const fs = require('fs');
 const database = require('./database.cjs');
 const updateManager = require('./update-manager.cjs');
 const centralClient = require('./central-client.cjs');
+const accessClient = require('./access-client.cjs');
 
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 if (process.platform === 'win32') app.setAppUserModelId('com.yahia.financialreports');
@@ -233,6 +234,9 @@ ipcMain.handle('purchase-orders:select-attachment', async (_event, kind = 'order
       const attachment=await centralClient.uploadFile(source,path.basename(source));
       return {ok:true,attachment};
     }
+    if(accessClient.publicStatus().enabled){
+      return {ok:true,attachment:accessClient.copyAttachment(source,path.basename(source))};
+    }
     const attachmentDir=path.join(database.paths().dataDir,'purchase-order-attachments');
     fs.mkdirSync(attachmentDir,{recursive:true});
     const ext=path.extname(source).toLowerCase();
@@ -265,10 +269,18 @@ ipcMain.handle('desktop:get-state', async () => {
   try {
     await database.initialize();
     if(centralClient.publicStatus().enabled){
+      if(accessClient.publicStatus().enabled)accessClient.setEnabled(false);
       const remote=await centralClient.loadState();
       database.saveState(remote.state,{source:'central-cache-load'});
       const local=database.getStorageInfo();
       return {ok:true,state:remote.state,storageInfo:{backend:'postgresql',schemaVersion:'central-1',lastSavedAt:remote.updatedAt,summary:database.getStateSummary(remote.state),localCachePath:local.databasePath,...centralClient.publicStatus()}};
+    }
+    if(accessClient.publicStatus().enabled){
+      const remote=await accessClient.loadState();
+      database.saveState(remote.state,{source:'access-cache-load'});
+      const local=database.getStorageInfo();
+      accessClient.backupIfDue(local.backupsPath).catch(error=>console.error('Access daily backup failed:',error));
+      return {ok:true,state:remote.state,storageInfo:{backend:'access',engine:'Microsoft ACE 16.0',schemaVersion:'access-1',lastSavedAt:remote.updatedAt,summary:database.getStateSummary(remote.state),localCachePath:local.databasePath,backupsPath:local.backupsPath,...accessClient.publicStatus()}};
     }
     const storageInfo = database.getStorageInfo();
     if (storageInfo?.migration?.failed) {
@@ -277,8 +289,9 @@ ipcMain.handle('desktop:get-state', async () => {
     return { ok:true, state:database.loadState(), storageInfo };
   } catch (error) {
     console.error('Failed to load SQLite app state:', error);
-    const central=centralClient.publicStatus();
-    return {ok:false,error:error.message,storageInfo:central.enabled?{backend:'postgresql',schemaVersion:'central-1',...central}:null};
+    const central=centralClient.publicStatus(),access=accessClient.publicStatus();
+    if(access.enabled)accessClient.markDisconnected();
+    return {ok:false,error:error.message,storageInfo:central.enabled?{backend:'postgresql',schemaVersion:'central-1',...central}:access.enabled?{backend:'access',schemaVersion:'access-1',...access,connected:false}:null};
   }
 });
 
@@ -291,10 +304,17 @@ ipcMain.handle('desktop:save-state', async (_event, state) => {
       database.saveState(result.state,{source:'central-cache-save'});
       return {ok:true,state:result.state,revision:result.revision,merged:result.merged,summary:database.getStateSummary(result.state)};
     }
+    if(accessClient.publicStatus().enabled){
+      const result=await accessClient.saveState(state);
+      if(!result.ok)return result;
+      database.saveState(result.state,{source:'access-cache-save'});
+      return {ok:true,state:result.state,revision:result.revision,merged:result.merged,summary:database.getStateSummary(result.state)};
+    }
     const summary = database.saveState(state, { source: 'renderer-state' });
     return { ok: true, summary };
   } catch (error) {
-    console.error('Failed to save SQLite app state:', error);
+    if(accessClient.publicStatus().enabled)accessClient.markDisconnected();
+    console.error('Failed to save app state:', error);
     return { ok: false, error: error.message };
   }
 });
@@ -306,6 +326,10 @@ ipcMain.handle('desktop:get-storage-info', async () => {
       const local=database.getStorageInfo();
       return {ok:true,backend:'postgresql',schemaVersion:'central-1',summary:local.summary,localCachePath:local.databasePath,...centralClient.publicStatus()};
     }
+    if(accessClient.publicStatus().enabled){
+      const local=database.getStorageInfo();
+      return {ok:true,backend:'access',engine:'Microsoft ACE 16.0',schemaVersion:'access-1',summary:local.summary,localCachePath:local.databasePath,backupsPath:local.backupsPath,...accessClient.publicStatus()};
+    }
     return { ok: true, ...database.getStorageInfo() };
   } catch (error) {
     return { ok: false, error: error.message };
@@ -316,6 +340,7 @@ ipcMain.handle('central:get-status',()=>({ok:true,...centralClient.publicStatus(
 ipcMain.handle('central:configure',async(_event,serverUrl)=>{try{const status=centralClient.configure(serverUrl);const health=await centralClient.health();return {ok:true,...status,health};}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
 ipcMain.handle('central:login',async(_event,credentials)=>{try{return await centralClient.login(credentials?.username,credentials?.password)}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
 ipcMain.handle('central:migrate-local',async()=>{try{
+  if(accessClient.publicStatus().enabled)throw new Error('أوقف وضع Access أولًا قبل تفعيل PostgreSQL.');
   await database.initialize();
   const backup=await database.createBackup('before-central-migration',true);
   if(!backup?.ok)throw new Error(backup?.error||'تعذر إنشاء نسخة أمان قبل النقل.');
@@ -324,7 +349,7 @@ ipcMain.handle('central:migrate-local',async()=>{try{
   database.saveState(result.state,{source:'central-initial-cache'});
   return {ok:true,state:result.state,backupPath:backup.path,attachmentsBackupPath:backup.attachmentsPath,storageInfo:{backend:'postgresql',schemaVersion:'central-1',summary:database.getStateSummary(result.state),localCachePath:database.getStorageInfo().databasePath,...centralClient.publicStatus()}};
 }catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
-ipcMain.handle('central:activate-existing',async()=>{try{const result=await centralClient.loadState();centralClient.setEnabled(true);await database.initialize();database.saveState(result.state,{source:'central-existing-cache'});return {ok:true,state:result.state,storageInfo:{backend:'postgresql',schemaVersion:'central-1',summary:database.getStateSummary(result.state),localCachePath:database.getStorageInfo().databasePath,...centralClient.publicStatus()}}}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
+ipcMain.handle('central:activate-existing',async()=>{try{if(accessClient.publicStatus().enabled)throw new Error('أوقف وضع Access أولًا قبل تفعيل PostgreSQL.');const result=await centralClient.loadState();centralClient.setEnabled(true);await database.initialize();database.saveState(result.state,{source:'central-existing-cache'});return {ok:true,state:result.state,storageInfo:{backend:'postgresql',schemaVersion:'central-1',summary:database.getStateSummary(result.state),localCachePath:database.getStorageInfo().databasePath,...centralClient.publicStatus()}}}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
 ipcMain.handle('central:disable',async(_event,options={})=>{try{
   await database.initialize();
   if(centralClient.publicStatus().enabled&&!options.force){const remote=await centralClient.loadState();database.saveState(remote.state,{source:'central-disable-snapshot'});await database.createBackup('central-disable',true);}
@@ -332,9 +357,35 @@ ipcMain.handle('central:disable',async(_event,options={})=>{try{
 }catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
 ipcMain.handle('central:sync-state',async(_event,state)=>{try{if(!centralClient.publicStatus().enabled)return {ok:true,unchanged:true};const result=await centralClient.syncState(state);if(result.ok&&result.state){await database.initialize();database.saveState(result.state,{source:'central-sync-cache'});}return result}catch(error){return {ok:false,error:error.message,...centralClient.publicStatus()}}});
 
+ipcMain.handle('access:get-status',()=>({ok:true,...accessClient.publicStatus()}));
+ipcMain.handle('access:migrate-local',async()=>{try{
+  if(centralClient.publicStatus().enabled)throw new Error('أوقف وضع PostgreSQL أولًا قبل تفعيل Access.');
+  const pick=await dialog.showSaveDialog(mainWindow,{title:'اختر مكان قاعدة Access المشتركة',defaultPath:'finance-shared.accdb',filters:[{name:'Microsoft Access Database',extensions:['accdb']}]});
+  if(pick.canceled||!pick.filePath)return {ok:false,canceled:true};
+  await database.initialize();
+  const backup=await database.createBackup('before-access-migration',true);if(!backup?.ok)throw new Error(backup?.error||'تعذر إنشاء نسخة أمان قبل النقل.');
+  const result=await accessClient.migrate(database.loadState(),pick.filePath);
+  database.saveState(result.state,{source:'access-initial-cache'});
+  const local=database.getStorageInfo();return {ok:true,state:result.state,backupPath:backup.path,attachmentsBackupPath:backup.attachmentsPath,storageInfo:{backend:'access',engine:'Microsoft ACE 16.0',schemaVersion:'access-1',summary:database.getStateSummary(result.state),localCachePath:local.databasePath,backupsPath:local.backupsPath,...accessClient.publicStatus()}};
+}catch(error){return {ok:false,error:error.message,...accessClient.publicStatus()}}});
+ipcMain.handle('access:activate-existing',async()=>{try{
+  if(centralClient.publicStatus().enabled)throw new Error('أوقف وضع PostgreSQL أولًا قبل تفعيل Access.');
+  const pick=await dialog.showOpenDialog(mainWindow,{title:'اختر قاعدة Access المشتركة',properties:['openFile'],filters:[{name:'Microsoft Access Database',extensions:['accdb']}]});
+  if(pick.canceled||!pick.filePaths?.[0])return {ok:false,canceled:true};
+  const result=await accessClient.activate(pick.filePaths[0]);await database.initialize();database.saveState(result.state,{source:'access-existing-cache'});
+  const local=database.getStorageInfo();return {ok:true,state:result.state,storageInfo:{backend:'access',engine:'Microsoft ACE 16.0',schemaVersion:'access-1',summary:database.getStateSummary(result.state),localCachePath:local.databasePath,backupsPath:local.backupsPath,...accessClient.publicStatus()}};
+}catch(error){return {ok:false,error:error.message,...accessClient.publicStatus()}}});
+ipcMain.handle('access:disable',async(_event,options={})=>{try{
+  await database.initialize();
+  if(accessClient.publicStatus().enabled&&!options.force){const remote=await accessClient.loadState();database.saveState(remote.state,{source:'access-disable-snapshot'});await accessClient.backup(database.paths().backupsDir);await database.createBackup('access-disable',true);}
+  accessClient.setEnabled(false);return {ok:true,state:database.loadState(),storageInfo:database.getStorageInfo(),...accessClient.publicStatus()};
+}catch(error){return {ok:false,error:error.message,...accessClient.publicStatus()}}});
+ipcMain.handle('access:sync-state',async(_event,state)=>{try{if(!accessClient.publicStatus().enabled)return {ok:true,unchanged:true};const result=await accessClient.syncState(state);if(result.ok&&result.state){await database.initialize();database.saveState(result.state,{source:'access-sync-cache'});}return result}catch(error){accessClient.markDisconnected();return {ok:false,error:error.message,...accessClient.publicStatus()}}});
+
 ipcMain.handle('desktop:backup-now', async () => {
   try {
     await database.initialize();
+    if(accessClient.publicStatus().enabled)return await accessClient.backup(database.paths().backupsDir);
     return await database.createBackup('manual', true);
   } catch (error) {
     return { ok: false, error: error.message };
@@ -387,7 +438,9 @@ ipcMain.handle('desktop:set-backup-directory', async () => {
       properties: ['openDirectory', 'createDirectory']
     });
     if (result.canceled || !result.filePaths?.[0]) return { ok:false, canceled:true };
-    return database.setBackupDirectory(result.filePaths[0]);
+    const saved=database.setBackupDirectory(result.filePaths[0]);
+    if(accessClient.publicStatus().enabled)return {ok:true,backend:'access',engine:'Microsoft ACE 16.0',schemaVersion:'access-1',summary:saved.summary,localCachePath:saved.databasePath,backupsPath:saved.backupsPath,...accessClient.publicStatus()};
+    return saved;
   } catch (error) {
     console.error('Failed to set backup directory:', error);
     return { ok:false, error:error.message };
