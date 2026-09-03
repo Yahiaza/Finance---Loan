@@ -2,7 +2,9 @@ const {app}=require('electron');
 const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
+const zlib=require('zlib');
 const {execFile}=require('child_process');
+const compressedTemplate=require('./access-template.cjs');
 
 let baseState=null;
 let revision=null;
@@ -18,6 +20,12 @@ const bridgePath=()=>app.isPackaged?path.join(process.resourcesPath,'access-brid
 const powershellPath=()=>path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
 const serialize=operation=>{const task=operationQueue.then(operation,operation);operationQueue=task.catch(()=>{});return task;};
 const safeDatabasePath=(value,requireExists=true)=>{const full=path.resolve(String(value||''));if(path.extname(full).toLowerCase()!=='.accdb')throw new Error('اختر ملف Microsoft Access بامتداد .accdb.');if(requireExists&&!fs.existsSync(full))throw new Error('ملف Access المحدد غير موجود.');return full;};
+function createFromTemplate(file){
+  fs.mkdirSync(path.dirname(file),{recursive:true});
+  const temporary=`${file}.${crypto.randomUUID()}.creating`;
+  try{fs.writeFileSync(temporary,zlib.gunzipSync(Buffer.from(compressedTemplate,'base64')),{flag:'wx'});fs.renameSync(temporary,file);}
+  finally{try{if(fs.existsSync(temporary))fs.unlinkSync(temporary)}catch{}}
+}
 
 function publicStatus(source=readConfig()){
   return {enabled:Boolean(source.enabled),configured:Boolean(source.databasePath),connected:Boolean(source.enabled&&connected),databasePath:source.databasePath||'',revision,lastBackupAt:source.lastBackupAt||null};
@@ -135,7 +143,8 @@ function migrateAttachments(state){
 }
 
 async function migrate(localState,databasePath){
-  const file=safeDatabasePath(databasePath,false),initialized=await runBridge({action:'initialize',databasePath:file,createIfMissing:true}),remote={state:parseState(initialized),revision:Number(initialized.revision),updatedAt:initialized.updatedAt,databasePath:file};connected=true;
+  const file=safeDatabasePath(databasePath,false);if(!fs.existsSync(file))createFromTemplate(file);
+  const initialized=await runBridge({action:'initialize',databasePath:file}),remote={state:parseState(initialized),revision:Number(initialized.revision),updatedAt:initialized.updatedAt,databasePath:file};connected=true;
   if(remote.revision!==0||Object.keys(remote.state||{}).length)throw new Error('قاعدة Access تحتوي على بيانات بالفعل ولن يتم استبدالها تلقائيًا.');
   writeConfig({databasePath:file,enabled:false});
   const prepared=migrateAttachments(localState),result=await runBridge({action:'write',databasePath:file,baseRevision:0,stateJson:JSON.stringify(prepared)},120000);

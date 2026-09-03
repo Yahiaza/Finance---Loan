@@ -53,18 +53,7 @@ try {
     }
   }
 
-  if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) {
-    if (-not $request.createIfMissing) { throw 'The selected Access database does not exist.' }
-    $catalog = New-Object -ComObject ADOX.Catalog
-    $createdConnection = $null
-    try {
-      $createdConnection = $catalog.Create("Provider=Microsoft.ACE.OLEDB.16.0;Data Source=$databasePath;Jet OLEDB:Engine Type=5;")
-      if ($createdConnection -and $createdConnection.State -ne 0) { $createdConnection.Close() }
-    } finally {
-      if ($createdConnection) { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($createdConnection) }
-      if ($catalog) { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($catalog) }
-    }
-  }
+  if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) { throw 'The selected Access database does not exist.' }
 
   $connectionString = "Provider=Microsoft.ACE.OLEDB.16.0;Data Source=$databasePath;Mode=Share Deny None;Persist Security Info=False;"
   $connection = New-Object System.Data.OleDb.OleDbConnection($connectionString)
