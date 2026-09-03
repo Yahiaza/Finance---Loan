@@ -20,6 +20,7 @@ const initialState = {
 
 function normalizeState(raw) {
   const state = raw || initialState;
+  const legacyTransferDepartment = String(state.supplierTransferDepartment ?? '');
   const fix = (arr, type) => (arr || []).map(x => ({
     ...x,
     date: x.date || todayISO,
@@ -46,8 +47,12 @@ function normalizeState(raw) {
     expenses: fix(state.expenses, 'expense'),
     pending: fix(state.pending, 'pending'),
     suppliers: (state.suppliers || []).map((x,i)=>({id:x.id||uid(),supplierNumber:String(x.supplierNumber??''),name:String(x.name??''),iban:String(x.iban??''),phone:String(x.phone??''),email:String(x.email??''),address:String(x.address??''),taxNumber:String(x.taxNumber??'')})),
-    supplierTransfers: (state.supplierTransfers || []).map(x=>({id:x.id||uid(),supplierNumber:String(x.supplierNumber??''),supplierName:String(x.supplierName??''),amount:String(x.amount??'')})),
-    supplierTransferDepartment: String(state.supplierTransferDepartment??''),
+    supplierTransfers: (state.supplierTransfers || []).map(x=>({
+      id:x.id||uid(), supplierNumber:String(x.supplierNumber??''), supplierName:String(x.supplierName??''), amount:String(x.amount??''),
+      date:x.date||todayISO, department:String(x.department??legacyTransferDepartment),
+      status:x.status==='transferred'?'transferred':'pending', transferredAt:x.transferredAt||null
+    })),
+    supplierTransferDepartment: legacyTransferDepartment,
     purchaseOrderDepartments: Array.isArray(state.purchaseOrderDepartments) ? state.purchaseOrderDepartments.map(x=>String(x||'').trim()).filter(Boolean) : [],
     purchaseRequesters: Array.isArray(state.purchaseRequesters) ? state.purchaseRequesters.map(x=>String(x||'').trim()).filter(Boolean) : [],
     purchaseOrders: (state.purchaseOrders || []).map(x=>({

@@ -222,11 +222,9 @@ ipcMain.handle('purchase-orders:select-attachment', async (_event, kind = 'order
   try {
     const transfer = kind === 'transfer';
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: transfer ? 'اختر صورة التحويل' : 'اختر صورة أو ملف PDF لأمر الشراء',
+      title: transfer ? 'اختر صورة أو ملف PDF للتحويل' : 'اختر صورة أو ملف PDF لطلب الشراء',
       properties:['openFile'],
-      filters: transfer
-        ? [{name:'الصور',extensions:['png','jpg','jpeg','webp']}]
-        : [{name:'الصور وملفات PDF',extensions:['pdf','png','jpg','jpeg','webp']}]
+      filters: [{name:'الصور وملفات PDF',extensions:['pdf','png','jpg','jpeg','webp']}]
     });
     if(result.canceled || !result.filePaths?.[0]) return {ok:false,canceled:true};
     const source=result.filePaths[0];

@@ -82,7 +82,7 @@ function Sidebar({page,setPage,theme='light',onToggleTheme}) {
     <button className={page==='incomeCollection'?'active':''} onClick={()=>setPage('incomeCollection')}><CalendarRange/> التحصيل الوارد الشهري</button>
     <button className={page==='incomeCollectionAggregate'?'active':''} onClick={()=>setPage('incomeCollectionAggregate')}><Layers3/> التحصيل الوارد المجمع</button>
     <button className={page==='pending'?'active':''} onClick={()=>setPage('pending')}><ClipboardList/> المبالغ المطلوبة</button>
-    <button className={page==='purchaseOrders'?'active':''} onClick={()=>setPage('purchaseOrders')}><ShoppingCart/> أوامر الشراء</button>
+    <button className={page==='purchaseOrders'?'active':''} onClick={()=>setPage('purchaseOrders')}><ShoppingCart/> طلبات الشراء</button>
     <button className={page==='suppliers'?'active':''} onClick={()=>setPage('suppliers')}><Truck/> بيان الموردين</button>
     <button className={page==='banks'?'active':''} onClick={()=>setPage('banks')}><WalletCards/> أرصدة البنوك</button>
 
@@ -149,6 +149,25 @@ function MiniDateCalendar({value,onChange,onClose}) {
     <div className="mini-weekdays">{['سبت','أحد','إثن','ثلا','أرب','خمي','جمع'].map(x=><span key={x}>{x}</span>)}</div>
     <div className="mini-days">{cells.map((day,i)=>day===null?<span key={`e${i}`}/>:<button key={day} className={`${value===`${view.y}-${pad(view.m)}-${pad(day)}`?'selected ':''}${`${view.y}-${pad(view.m)}-${pad(day)}`===todayISO?'today':''}`} disabled={`${view.y}-${pad(view.m)}-${pad(day)}`>todayISO} onClick={()=>choose(day)}>{day}</button>)}</div>
     <div className="mini-calendar-foot"><button onClick={()=>{onChange(todayISO);onClose();}}>الذهاب إلى اليوم</button></div>
+  </div>;
+}
+
+function RtlDatePicker({value,onChange,disabled=false,className='',title='اختر التاريخ'}) {
+  const [open,setOpen]=useState(false);
+  const wrapRef=useRef(null);
+  const safeValue=value||todayISO;
+  const [year,month,day]=safeValue.split('-');
+  useEffect(()=>{
+    if(!open)return undefined;
+    const close=e=>{if(!wrapRef.current?.contains(e.target))setOpen(false);};
+    window.addEventListener('mousedown',close);
+    return()=>window.removeEventListener('mousedown',close);
+  },[open]);
+  return <div ref={wrapRef} className={`rtl-date-picker ${className}`.trim()} dir="rtl">
+    <button type="button" className="rtl-date-picker-button" disabled={disabled} onClick={()=>setOpen(v=>!v)} title={title} aria-label={title}>
+      <Calendar size={16}/><span className="rtl-date-value"><b>{day}</b><i>/</i><b>{month}</b><i>/</i><b>{year}</b></span>
+    </button>
+    {open&&!disabled&&<MiniDateCalendar value={safeValue} onChange={onChange} onClose={()=>setOpen(false)}/>}
   </div>;
 }
 
@@ -287,4 +306,4 @@ function AppToast({toast,onClose}) {
   </div>;
 }
 
-export { PageErrorBoundary, PrintPreviewModal, AppConfirmDialog, AppToast, DesktopTitleBar, Sidebar, MiniDateCalendar, DateHeader, PageToolbar, SummaryCard, DateCell, AmountCell, TextCell, GrowingTextCell, ExpenseAction, PrintReportHeader };
+export { PageErrorBoundary, PrintPreviewModal, AppConfirmDialog, AppToast, DesktopTitleBar, Sidebar, MiniDateCalendar, RtlDatePicker, DateHeader, PageToolbar, SummaryCard, DateCell, AmountCell, TextCell, GrowingTextCell, ExpenseAction, PrintReportHeader };
