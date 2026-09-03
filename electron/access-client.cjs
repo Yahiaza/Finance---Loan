@@ -17,7 +17,7 @@ const configFile=()=>path.join(app.getPath('userData'),'access-storage.json');
 const readConfig=()=>{try{return JSON.parse(fs.readFileSync(configFile(),'utf8'))}catch{return {enabled:false,databasePath:''}}};
 const writeConfig=patch=>{const next={...readConfig(),...patch,updatedAt:new Date().toISOString()};fs.mkdirSync(path.dirname(configFile()),{recursive:true});const temp=`${configFile()}.tmp`;fs.writeFileSync(temp,JSON.stringify(next,null,2),'utf8');fs.renameSync(temp,configFile());return next;};
 const bridgePath=()=>app.isPackaged?path.join(process.resourcesPath,'access-bridge.ps1'):path.join(__dirname,'access-bridge.ps1');
-const powershellPath=()=>path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+const powershellPath=()=>path.join(process.env.SystemRoot||'C:\\Windows',process.arch==='ia32'?'SysWOW64':'System32','WindowsPowerShell','v1.0','powershell.exe');
 const serialize=operation=>{const task=operationQueue.then(operation,operation);operationQueue=task.catch(()=>{});return task;};
 const safeDatabasePath=(value,requireExists=true)=>{const full=path.resolve(String(value||''));if(path.extname(full).toLowerCase()!=='.accdb')throw new Error('اختر ملف Microsoft Access بامتداد .accdb.');if(requireExists&&!fs.existsSync(full))throw new Error('ملف Access المحدد غير موجود.');return full;};
 function createFromTemplate(file){

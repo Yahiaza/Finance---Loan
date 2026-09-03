@@ -76,16 +76,19 @@ function downloadFile(url,destination,onProgress){
 async function check(){
   const source=readSettings();
   const currentVersion=app.getVersion();
-  if(!configured(source)) return {success:false,configured:false,currentVersion,source,message:'حدد حساب GitHub واسم المستودع من قسم التحديثات أولاً.'};
+  const architecture=process.arch==='ia32'?'ia32':'x64';
+  if(!configured(source)) return {success:false,configured:false,currentVersion,architecture,source,message:'حدد حساب GitHub واسم المستودع من قسم التحديثات أولاً.'};
   try{
     const release=await requestJson(`https://api.github.com/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repo)}/releases/latest`);
     const latestVersion=String(release.tag_name||release.name||'').replace(/^v/i,'').trim();
     if(!latestVersion) throw new Error('تعذر قراءة رقم الإصدار من GitHub Release.');
     const assetPattern=/^Financial-Reports-Portable-[0-9A-Za-z._-]+\.exe$/i;
-    const asset=(release.assets||[]).find(a=>assetPattern.test(a.name||''));
-    latestUpdateInfo={currentVersion,latestVersion,updateAvailable:compareVersions(currentVersion,latestVersion),notes:release.body||'',publishedAt:release.published_at||release.created_at||'',htmlUrl:release.html_url||'',asset:asset?{name:asset.name,url:asset.browser_download_url,size:asset.size||0}:null,source};
+    const portableAssets=(release.assets||[]).filter(a=>assetPattern.test(a.name||''));
+    const asset=portableAssets.find(a=>new RegExp(`-${architecture}\\.exe$`,'i').test(a.name||''))
+      ||portableAssets.find(a=>!/(?:-x64|-ia32)\.exe$/i.test(a.name||''));
+    latestUpdateInfo={currentVersion,latestVersion,architecture,updateAvailable:compareVersions(currentVersion,latestVersion),notes:release.body||'',publishedAt:release.published_at||release.created_at||'',htmlUrl:release.html_url||'',asset:asset?{name:asset.name,url:asset.browser_download_url,size:asset.size||0}:null,source};
     return {success:true,configured:true,...latestUpdateInfo};
-  }catch(error){return {success:false,configured:true,currentVersion,source,message:error?.message||'تعذر الاتصال بـ GitHub.'};}
+  }catch(error){return {success:false,configured:true,currentVersion,architecture,source,message:error?.message||'تعذر الاتصال بـ GitHub.'};}
 }
 async function download(onProgress){
   if(!latestUpdateInfo?.updateAvailable)return {success:false,message:'تحقق من وجود تحديث أولاً.'};
@@ -101,5 +104,5 @@ async function launchDownloaded(){
   if(result)return {success:false,message:result};
   return {success:true,path:downloadedUpdatePath};
 }
-function getStatus(){return {currentVersion:app.getVersion(),source:readSettings(),configured:configured(),...(latestUpdateInfo||{}),latestUpdateInfo,downloadedUpdatePath:downloadedUpdatePath&&fs.existsSync(downloadedUpdatePath)?downloadedUpdatePath:''};}
+function getStatus(){return {currentVersion:app.getVersion(),architecture:process.arch==='ia32'?'ia32':'x64',source:readSettings(),configured:configured(),...(latestUpdateInfo||{}),latestUpdateInfo,downloadedUpdatePath:downloadedUpdatePath&&fs.existsSync(downloadedUpdatePath)?downloadedUpdatePath:''};}
 module.exports={readSettings,saveSettings,getStatus,check,download,showDownloaded,launchDownloaded};

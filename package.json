@@ -1,6 +1,6 @@
 {
   "name": "financial-reports-manager",
-  "version": "4.1.2",
+  "version": "4.1.3",
   "private": true,
   "description": "Arabic RTL financial desktop manager with native Electron persistence",
   "main": "electron/main.cjs",
@@ -12,7 +12,9 @@
     "portable:folder": "npm run build:folder",
     "portable:exe": "npm run build:portable",
     "dist": "npm run build:portable",
-    "build:portable": "npm run build && electron-builder --win --x64",
+    "build:portable": "npm run build:portable:x64",
+    "build:portable:x64": "npm run build && electron-builder --win --x64",
+    "build:portable:ia32": "npm run build && electron-builder --win --ia32",
     "build:folder": "npm run build && electron-builder --win --x64 --dir"
   },
   "dependencies": {},
@@ -48,7 +50,7 @@
       "icon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "Financial-Reports-Portable-${version}.exe",
+      "artifactName": "Financial-Reports-Portable-${version}-${arch}.exe",
       "buildUniversalInstaller": false
     },
     "asar": true,

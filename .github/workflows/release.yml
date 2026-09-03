@@ -21,8 +21,12 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Build Portable
-        run: npm run build:portable
+      - name: Build Portable 64-bit
+        run: npm run build:portable:x64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Build Portable 32-bit
+        run: npm run build:portable:ia32
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Package Central Server
@@ -40,11 +44,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $portable = Get-ChildItem -Path release -Filter "Financial-Reports-Portable-*.exe" | Select-Object -ExpandProperty FullName
+          $portable64 = Get-ChildItem -Path release -Filter "Financial-Reports-Portable-*-x64.exe" | Select-Object -First 1 -ExpandProperty FullName
+          $portable32 = Get-ChildItem -Path release -Filter "Financial-Reports-Portable-*-ia32.exe" | Select-Object -First 1 -ExpandProperty FullName
           $server = Get-ChildItem -Path release -Filter "Finance-Central-Server-*.zip" | Select-Object -ExpandProperty FullName
-          if (-not $portable) { throw "Portable EXE was not generated." }
+          if (-not $portable64) { throw "64-bit Portable EXE was not generated." }
+          if (-not $portable32) { throw "32-bit Portable EXE was not generated." }
           if (-not $server) { throw "Central server package was not generated." }
-          $files = @($portable) + @($server)
+          $files = @($portable64, $portable32) + @($server)
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag $files --title $tag --generate-notes
