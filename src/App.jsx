@@ -34,11 +34,12 @@ function App() {
   const [sectionEditing,setSectionEditing] = useState({reports:false,pending:false,purchaseOrders:false,banks:false,loans:false,settings:false,companies:false,suppliers:false});
   const [toast,setToast] = useState(null);
   const [storageInfo,setStorageInfo] = useState(null);
-  const [updateStatus,setUpdateStatus] = useState({currentVersion:'4.2.1',source:{owner:'Yahiaza',repo:'Finance---Loan',autoCheck:true},configured:true,checked:false,progress:0,downloading:false,downloadedPath:''});
+  const [updateStatus,setUpdateStatus] = useState({currentVersion:'4.2.2',source:{owner:'Yahiaza',repo:'Finance---Loan',autoCheck:true},configured:true,checked:false,progress:0,downloading:false,downloadedPath:''});
   const [centralStatus,setCentralStatus]=useState({enabled:false,configured:false,authenticated:false,connected:false,serverUrl:'',username:'',revision:null});
   const [accessStatus,setAccessStatus]=useState({enabled:false,configured:false,connected:false,databasePath:'',revision:null});
   const stateRef=useRef(state);
   const centralSyncBusy=useRef(false);
+  const saveGeneration=useRef(0);
   useEffect(()=>{stateRef.current=state;},[state]);
 
   // Keep the app date alive while Electron stays open across midnight.
@@ -187,8 +188,11 @@ function App() {
     // Keep localStorage as a lightweight compatibility/fallback copy.
     localStorage.setItem('financial-reports-state-v3', JSON.stringify(state));
     if (!desktopStorageReady || !window.desktopApp?.saveState) return;
+    const generation=++saveGeneration.current;
+    const savedSnapshot=state;
     const timer = setTimeout(() => {
-      window.desktopApp.saveState(state).then(result => {
+      window.desktopApp.saveState(savedSnapshot).then(result => {
+        if(generation!==saveGeneration.current||stateRef.current!==savedSnapshot)return;
         if (result && !result.ok) {
           console.error('Desktop data save failed:', result.error);
           if(result.conflict&&result.state){
@@ -206,11 +210,12 @@ function App() {
           setStorageInfo(info=>info?{...info,summary:result.summary||info.summary,lastSavedAt:new Date().toISOString()}:info);
         }
       }).catch(error => {
+        if(generation!==saveGeneration.current||stateRef.current!==savedSnapshot)return;
         console.error('Desktop data save failed:', error);
         setToast({tone:'error',title:'تعذر حفظ البيانات',message:error.message || 'حدث خطأ أثناء الحفظ في قاعدة البيانات.'});
       });
     }, 700);
-    return () => clearTimeout(timer);
+    return () => {clearTimeout(timer);if(saveGeneration.current===generation)saveGeneration.current+=1;};
   }, [state, desktopStorageReady]);
 
   useEffect(()=>{
@@ -218,14 +223,14 @@ function App() {
     const timer=setInterval(async()=>{
       if(centralSyncBusy.current)return;
       centralSyncBusy.current=true;
+      const syncedSnapshot=stateRef.current;
       try{
-        const result=await window.desktopApp.syncCentralState(stateRef.current);
+        const result=await window.desktopApp.syncCentralState(syncedSnapshot);
         if(result?.ok){
           setCentralStatus(s=>({...s,connected:true,revision:result.revision??s.revision}));
-          if(result.state&&JSON.stringify(result.state)!==JSON.stringify(stateRef.current))setState(normalizeState(result.state));
+          if(stateRef.current===syncedSnapshot&&result.state&&JSON.stringify(result.state)!==JSON.stringify(syncedSnapshot))setState(normalizeState(result.state));
         }else if(result?.conflict&&result.state){
-          setState(normalizeState(result.state));
-          setToast({tone:'error',title:'تم منع تعارض بين المستخدمين',message:'تم تحميل أحدث بيانات السيرفر، وحُفظ التعديل المتعارض في ملف مراجعة محلي.'});
+          if(stateRef.current===syncedSnapshot){setState(normalizeState(result.state));setToast({tone:'error',title:'تم منع تعارض بين المستخدمين',message:'تم تحميل أحدث بيانات السيرفر، وحُفظ التعديل المتعارض في ملف مراجعة محلي.'});}
         }else setCentralStatus(s=>({...s,connected:false}));
       }catch{setCentralStatus(s=>({...s,connected:false}));}
       finally{centralSyncBusy.current=false;}
@@ -238,14 +243,14 @@ function App() {
     const timer=setInterval(async()=>{
       if(centralSyncBusy.current)return;
       centralSyncBusy.current=true;
+      const syncedSnapshot=stateRef.current;
       try{
-        const result=await window.desktopApp.syncAccessState(stateRef.current);
+        const result=await window.desktopApp.syncAccessState(syncedSnapshot);
         if(result?.ok){
           setAccessStatus(s=>({...s,connected:true,revision:result.revision??s.revision}));
-          if(result.state&&JSON.stringify(result.state)!==JSON.stringify(stateRef.current))setState(normalizeState(result.state));
+          if(stateRef.current===syncedSnapshot&&result.state&&JSON.stringify(result.state)!==JSON.stringify(syncedSnapshot))setState(normalizeState(result.state));
         }else if(result?.conflict&&result.state){
-          setState(normalizeState(result.state));
-          setToast({tone:'error',title:'تم منع تعارض بين المستخدمين',message:`تم تحميل أحدث بيانات Access وحُفظ التعديل المتعارض للمراجعة${result.conflictPath?` في: ${result.conflictPath}`:''}.`});
+          if(stateRef.current===syncedSnapshot){setState(normalizeState(result.state));setToast({tone:'error',title:'تم منع تعارض بين المستخدمين',message:`تم تحميل أحدث بيانات Access وحُفظ التعديل المتعارض للمراجعة${result.conflictPath?` في: ${result.conflictPath}`:''}.`});}
         }else setAccessStatus(s=>({...s,connected:false}));
       }catch{setAccessStatus(s=>({...s,connected:false}));}
       finally{centralSyncBusy.current=false;}
