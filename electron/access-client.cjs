@@ -59,7 +59,13 @@ async function readPath(databasePath){
 
 async function loadState(){
   const cfg=readConfig();if(!cfg.databasePath)throw new Error('لم يتم اختيار ملف Access المشترك.');
-  const result=await readPath(cfg.databasePath);baseState=clone(result.state);revision=result.revision;return {ok:true,...result};
+  let result=await readPath(cfg.databasePath);
+  const prepared=migrateAttachments(result.state);
+  if(!deepEqual(prepared,result.state)){
+    const migrated=await runBridge({action:'write',databasePath:safeDatabasePath(cfg.databasePath),baseRevision:result.revision,stateJson:JSON.stringify(prepared)},90000);
+    result=migrated.ok?{...result,state:prepared,revision:Number(migrated.revision),updatedAt:migrated.updatedAt}:{...result,state:parseState(migrated),revision:Number(migrated.revision),updatedAt:migrated.updatedAt};
+  }
+  baseState=clone(result.state);revision=result.revision;return {ok:true,...result};
 }
 
 function mergeRecord(base,local,remote,location,conflicts){
@@ -130,15 +136,31 @@ async function syncState(localState){
 }
 
 function attachmentDirectory(databasePath=readConfig().databasePath){return path.join(path.dirname(safeDatabasePath(databasePath)),'finance-attachments');}
+function resolveAttachment(attachment){
+  const directory=attachmentDirectory(),storedName=path.basename(String(attachment?.fileName||attachment?.relativePath||attachment?.path||''));
+  const managed=storedName?path.join(directory,storedName):'';
+  if(managed&&fs.existsSync(managed))return managed;
+  const legacy=attachment?.path?path.resolve(String(attachment.path)):'';
+  if(legacy&&fs.existsSync(legacy))return legacy;
+  return managed||legacy;
+}
 function copyAttachment(source,displayName){
   const directory=attachmentDirectory();fs.mkdirSync(directory,{recursive:true});
   const ext=path.extname(source).toLowerCase(),base=path.basename(displayName||source,ext).replace(/[^\p{L}\p{N}._-]+/gu,'-').slice(0,70)||'attachment';
-  const target=path.join(directory,`${Date.now()}-${crypto.randomUUID().slice(0,8)}-${base}${ext}`),temporary=`${target}.uploading`;fs.copyFileSync(source,temporary);fs.renameSync(temporary,target);
-  return {name:path.basename(displayName||source),path:target,type:ext==='.pdf'?'pdf':'image',sharedAccess:true,addedAt:new Date().toISOString()};
+  const fileName=`${Date.now()}-${crypto.randomUUID().slice(0,8)}-${base}${ext}`,target=path.join(directory,fileName),temporary=`${target}.uploading`;
+  try{fs.copyFileSync(source,temporary);fs.renameSync(temporary,target);}finally{try{if(fs.existsSync(temporary))fs.unlinkSync(temporary)}catch{}}
+  return {name:path.basename(displayName||source),fileName,relativePath:path.join('finance-attachments',fileName),type:ext==='.pdf'?'pdf':'image',storage:'access',sharedAccess:true,addedAt:new Date().toISOString()};
 }
 function migrateAttachments(state){
   const next=clone(state);
-  for(const order of next.purchaseOrders||[])for(const key of ['orderAttachment','transferAttachment']){const attachment=order[key];if(attachment?.path&&fs.existsSync(attachment.path)&&!attachment.sharedAccess)order[key]=copyAttachment(attachment.path,attachment.name);}
+  for(const order of next.purchaseOrders||[])for(const key of ['orderAttachment','transferAttachment']){
+    const attachment=order[key];if(!attachment||attachment.remote)continue;
+    const resolved=resolveAttachment(attachment);
+    if(attachment.sharedAccess&&resolved&&fs.existsSync(resolved)){
+      const fileName=path.basename(resolved),{path:_legacyPath,...rest}=attachment;
+      order[key]={...rest,fileName,relativePath:path.join('finance-attachments',fileName),storage:'access',sharedAccess:true};
+    }else if(resolved&&fs.existsSync(resolved))order[key]=copyAttachment(resolved,attachment.name);
+  }
   return next;
 }
 
@@ -178,7 +200,7 @@ function setEnabled(value){const cfg=writeConfig({enabled:Boolean(value)});if(!v
 function markDisconnected(){connected=false;return publicStatus();}
 
 module.exports={
-  publicStatus,setEnabled,markDisconnected,copyAttachment,readConfig,
+  publicStatus,setEnabled,markDisconnected,copyAttachment,resolveAttachment,readConfig,
   backup:directory=>serialize(()=>backup(directory,false)),backupIfDue:directory=>serialize(()=>backupIfDue(directory)),
   loadState:()=>serialize(loadState),saveState:state=>serialize(()=>saveState(state)),syncState:state=>serialize(()=>syncState(state)),
   migrate:(state,file)=>serialize(()=>migrate(state,file)),activate:file=>serialize(()=>activate(file))

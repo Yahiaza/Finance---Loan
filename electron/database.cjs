@@ -573,26 +573,28 @@ async function createBackup(kind = 'daily', force = false) {
   const p = ensureDirectories();
   const backupStamp = stamp();
   let target;
-  if (kind === 'migration') target = path.join(p.migrationDir, `finance-after-migration-${stamp()}.db`);
+  if (kind === 'migration') target = path.join(p.migrationDir, `finance-after-migration-${backupStamp}.db`);
   else if (kind === 'before-central-migration') target = path.join(p.migrationDir, `finance-before-central-${backupStamp}.db`);
   else if (kind === 'before-access-migration') target = path.join(p.migrationDir, `finance-before-access-${backupStamp}.db`);
   else if (kind === 'central-disable') target = path.join(p.migrationDir, `finance-central-disable-${backupStamp}.db`);
   else if (kind === 'access-disable') target = path.join(p.migrationDir, `finance-access-disable-${backupStamp}.db`);
-  else if (kind === 'manual') target = path.join(p.backupsDir, `finance-manual-${stamp()}.db`);
+  else if (kind === 'manual') target = path.join(p.backupsDir, `finance-manual-${backupStamp}.db`);
   else target = path.join(p.dailyDir, `finance-${isoDay()}.db`);
 
-  if (!force && fs.existsSync(target)) return { ok:true, path:target, skipped:true };
+  if (!force && fs.existsSync(target)) {
+    const sourceAttachments=path.join(p.dataDir,'purchase-order-attachments');
+    const attachmentsPath=target.replace(/\.db$/i,'-attachments');
+    if(fs.existsSync(sourceAttachments))fs.cpSync(sourceAttachments,attachmentsPath,{recursive:true,force:true});
+    return {ok:true,path:target,attachmentsPath:fs.existsSync(attachmentsPath)?attachmentsPath:null,skipped:true};
+  }
 
   backupInFlight = backup(database, target, { rate: 100 })
     .then(() => {
       let attachmentsPath = null;
-      if (kind === 'before-central-migration' || kind === 'before-access-migration') {
-        const sourceAttachments = path.join(p.dataDir, 'purchase-order-attachments');
-        if (fs.existsSync(sourceAttachments)) {
-          const label=kind === 'before-access-migration'?'access':'central';
-          attachmentsPath = path.join(p.migrationDir, `purchase-order-attachments-before-${label}-${backupStamp}`);
-          fs.cpSync(sourceAttachments, attachmentsPath, { recursive:true, errorOnExist:true });
-        }
+      const sourceAttachments = path.join(p.dataDir, 'purchase-order-attachments');
+      if (fs.existsSync(sourceAttachments)) {
+        attachmentsPath = target.replace(/\.db$/i, '-attachments');
+        fs.cpSync(sourceAttachments, attachmentsPath, { recursive:true, force:true });
       }
       lastBackupAt = Date.now();
       setMeta('last_backup_at', new Date().toISOString());
@@ -612,7 +614,10 @@ function cleanupDailyBackups(keep = 30) {
       .filter(name => /^finance-\d{4}-\d{2}-\d{2}\.db$/i.test(name))
       .map(name => ({name, path:path.join(p.dailyDir,name), mtime:fs.statSync(path.join(p.dailyDir,name)).mtimeMs}))
       .sort((a,b)=>b.mtime-a.mtime);
-    files.slice(keep).forEach(f=>{ try{fs.unlinkSync(f.path);}catch{} });
+    files.slice(keep).forEach(f=>{
+      try{fs.unlinkSync(f.path);}catch{}
+      try{const attachments=f.path.replace(/\.db$/i,'-attachments');if(fs.existsSync(attachments))fs.rmSync(attachments,{recursive:true,force:true});}catch{}
+    });
   } catch {}
 }
 

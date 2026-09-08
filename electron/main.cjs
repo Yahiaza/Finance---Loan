@@ -239,9 +239,9 @@ ipcMain.handle('purchase-orders:select-attachment', async (_event, kind = 'order
     fs.mkdirSync(attachmentDir,{recursive:true});
     const ext=path.extname(source).toLowerCase();
     const base=path.basename(source,ext).replace(/[^\p{L}\p{N}._-]+/gu,'-').slice(0,70)||'attachment';
-    const target=path.join(attachmentDir,`${Date.now()}-${Math.random().toString(36).slice(2,8)}-${base}${ext}`);
-    fs.copyFileSync(source,target);
-    return {ok:true,attachment:{name:path.basename(source),path:target,type:ext==='.pdf'?'pdf':'image',addedAt:new Date().toISOString()}};
+    const fileName=`${Date.now()}-${Math.random().toString(36).slice(2,8)}-${base}${ext}`,target=path.join(attachmentDir,fileName),temporary=`${target}.uploading`;
+    try{fs.copyFileSync(source,temporary);fs.renameSync(temporary,target);}finally{try{if(fs.existsSync(temporary))fs.unlinkSync(temporary)}catch{}}
+    return {ok:true,attachment:{name:path.basename(source),fileName,relativePath:path.join('purchase-order-attachments',fileName),path:target,type:ext==='.pdf'?'pdf':'image',storage:'local',addedAt:new Date().toISOString()}};
   } catch(error) {
     return {ok:false,error:error.message};
   }
@@ -254,7 +254,14 @@ ipcMain.handle('purchase-orders:open-attachment', async (_event, attachment) => 
       const error=await shell.openPath(downloaded);
       return error?{ok:false,error}:{ok:true};
     }
-    const resolved=path.resolve(String(attachment?.path||attachment||''));
+    let resolved='';
+    if(attachment?.storage==='access'||attachment?.sharedAccess||accessClient.publicStatus().enabled)resolved=accessClient.resolveAttachment(attachment);
+    else{
+      const storedName=path.basename(String(attachment?.fileName||attachment?.relativePath||attachment?.path||''));
+      const managed=storedName?path.join(database.paths().dataDir,'purchase-order-attachments',storedName):'';
+      const legacy=attachment?.path?path.resolve(String(attachment.path)):'';
+      resolved=managed&&fs.existsSync(managed)?managed:(legacy&&fs.existsSync(legacy)?legacy:managed||legacy);
+    }
     if(!fs.existsSync(resolved)) return {ok:false,error:'الملف المرفق غير موجود في مكانه المحفوظ.'};
     const error=await shell.openPath(resolved);
     return error?{ok:false,error}:{ok:true};
