@@ -5,10 +5,9 @@ const database = require('./database.cjs');
 const updateManager = require('./update-manager.cjs');
 const centralClient = require('./central-client.cjs');
 const accessClient = require('./access-client.cjs');
-const {purchaseOnly,selectPurchaseState}=require('./purchase-scope.cjs');
+const {purchaseOnly,selectPurchaseState,configurePurchaseStorage}=require('./purchase-scope.cjs');
 if(purchaseOnly){
-  app.setName('purchase-orders-manager');
-  app.setPath('userData',path.join(app.getPath('appData'),'purchase-orders-manager'));
+  configurePurchaseStorage(app);
   const register=ipcMain.handle.bind(ipcMain);
   const denied=new Set(['import-json','export-json','desktop:move-database','desktop:select-existing-database','central:configure','central:login','central:migrate-local','central:activate-existing','central:disable','access:migrate-local','access:disable','desktop:backup-now']);
   ipcMain.handle=(channel,handler)=>register(channel,async(...args)=>{

@@ -1,6 +1,16 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {restrictPurchaseWrite,selectPurchaseState,updateAssetPattern}=require('./purchase-scope.cjs');
+test('first launch creates the separate settings directory before Electron setPath',()=>{
+  const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'purchase-startup-'));
+  try{
+    let configured;
+    const app={getPath:()=>root,setName:()=>{},setPath:(key,directory)=>{assert.equal(key,'userData');assert.equal(fs.statSync(directory).isDirectory(),true);configured=directory;}};
+    require('./purchase-scope.cjs').configurePurchaseStorage(app);
+    assert.equal(configured,path.join(root,'purchase-orders-manager'));
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
 test('purchase save preserves unrelated financial records even when missing or changed locally',()=>{
   const base={incomes:[{id:'income',amount:900}],banks:[{id:'bank',balance:500}],departments:['finance'],purchaseOrders:[{id:'old'}],futureField:{value:42}};
   const local={incomes:[],banks:[],departments:[],purchaseOrders:[{id:'new',orderAttachment:{fileName:'shared.png'}}]};

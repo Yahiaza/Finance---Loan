@@ -7,4 +7,10 @@ function restrictPurchaseWrite(base={},local={}){
   return result;
 }
 function updateAssetPattern(purchase=purchaseOnly){return purchase?/^Purchase-Orders-Portable-[0-9A-Za-z._-]+\.exe$/i:/^Financial-Reports-Portable-[0-9A-Za-z._-]+\.exe$/i;}
-module.exports={purchaseOnly,selectPurchaseState,restrictPurchaseWrite,updateAssetPattern};
+function configurePurchaseStorage(app){
+  const directory=require('node:path').join(app.getPath('appData'),'purchase-orders-manager');
+  require('node:fs').mkdirSync(directory,{recursive:true});
+  app.setName('purchase-orders-manager');
+  app.setPath('userData',directory);
+}
+module.exports={purchaseOnly,selectPurchaseState,restrictPurchaseWrite,updateAssetPattern,configurePurchaseStorage};
