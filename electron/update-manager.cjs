@@ -82,7 +82,7 @@ async function check(){
     const release=await requestJson(`https://api.github.com/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repo)}/releases/latest`);
     const latestVersion=String(release.tag_name||release.name||'').replace(/^v/i,'').trim();
     if(!latestVersion) throw new Error('تعذر قراءة رقم الإصدار من GitHub Release.');
-    const assetPattern=/^Financial-Reports-Portable-[0-9A-Za-z._-]+\.exe$/i;
+    const assetPattern=require('./purchase-scope.cjs').updateAssetPattern();
     const portableAssets=(release.assets||[]).filter(a=>assetPattern.test(a.name||''));
     const asset=portableAssets.find(a=>new RegExp(`-${architecture}\\.exe$`,'i').test(a.name||''))
       ||portableAssets.find(a=>!/(?:-x64|-ia32)\.exe$/i.test(a.name||''));

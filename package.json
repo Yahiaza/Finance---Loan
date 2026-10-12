@@ -1,6 +1,6 @@
 {
   "name": "financial-reports-manager",
-  "version": "4.2.7",
+  "version": "4.2.8",
   "private": true,
   "description": "Arabic RTL financial desktop manager with native Electron persistence",
   "main": "electron/main.cjs",
@@ -15,7 +15,9 @@
     "build:portable": "npm run build:portable:x64",
     "build:portable:x64": "npm run build && electron-builder --win --x64",
     "build:portable:ia32": "npm run build && electron-builder --win --ia32",
-    "build:folder": "npm run build && electron-builder --win --x64 --dir"
+    "build:folder": "npm run build && electron-builder --win --x64 --dir",
+    "build:purchase:x64": "npm run build && electron-builder --config build/purchase-builder.json --win --x64",
+    "build:purchase:ia32": "npm run build && electron-builder --config build/purchase-builder.json --win --ia32"
   },
   "dependencies": {},
   "devDependencies": {

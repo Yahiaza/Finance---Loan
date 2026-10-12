@@ -5,9 +5,24 @@ const database = require('./database.cjs');
 const updateManager = require('./update-manager.cjs');
 const centralClient = require('./central-client.cjs');
 const accessClient = require('./access-client.cjs');
+const {purchaseOnly,selectPurchaseState}=require('./purchase-scope.cjs');
+if(purchaseOnly){
+  app.setName('purchase-orders-manager');
+  app.setPath('userData',path.join(app.getPath('appData'),'purchase-orders-manager'));
+  const register=ipcMain.handle.bind(ipcMain);
+  const denied=new Set(['import-json','export-json','desktop:move-database','desktop:select-existing-database','central:configure','central:login','central:migrate-local','central:activate-existing','central:disable','access:migrate-local','access:disable','desktop:backup-now']);
+  ipcMain.handle=(channel,handler)=>register(channel,async(...args)=>{
+    if(denied.has(channel))return {ok:false,error:'هذا الإجراء غير متاح في نسخة طلبات الشراء.'};
+    if(channel==='desktop:save-state'&&!accessClient.publicStatus().enabled)return {ok:true,unchanged:true};
+    if(channel==='purchase-orders:select-attachment'&&!accessClient.publicStatus().enabled)return {ok:false,error:'اختر قاعدة Access المشتركة أولًا.'};
+    const result=await handler(...args);
+    if(result?.state)return {...result,state:selectPurchaseState(result.state)};
+    return result;
+  });
+}
 
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
-if (process.platform === 'win32') app.setAppUserModelId('com.yahia.financialreports');
+if (process.platform === 'win32') app.setAppUserModelId(purchaseOnly?'com.yahia.purchaseorders':'com.yahia.financialreports');
 
 // Prevent opening two copies that could write the same financial data at the same time.
 const gotLock = app.requestSingleInstanceLock();
@@ -44,9 +59,9 @@ function createTray() {
     trayIcon = nativeImage.createFromPath(fallback);
   }
   tray = new Tray(trayIcon);
-  tray.setToolTip('الإدارة المالية');
+  tray.setToolTip(purchaseOnly?'طلبات الشراء':'الإدارة المالية');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'فتح الإدارة المالية', click: showMainWindow },
+    { label: purchaseOnly?'فتح طلبات الشراء':'فتح الإدارة المالية', click: showMainWindow },
     { type: 'separator' },
     { label: 'خروج', click: () => app.quit() }
   ]));
@@ -102,6 +117,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      additionalArguments: purchaseOnly?['--purchase-only']:[],
       spellcheck: false,
       devTools: !app.isPackaged
     }

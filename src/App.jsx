@@ -11,10 +11,13 @@ import SettingsPage from './features/settings/SettingsPage.jsx';
 import { CompaniesPage, MonthlyIncomeCollectionPage, AggregateIncomeCollectionPage } from './features/reports/IncomeCollectionPages.jsx';
 import SuppliersPage from './features/suppliers/SuppliersPage.jsx';
 import PurchaseOrdersPage from './features/purchaseOrders/PurchaseOrdersPage.jsx';
+import PurchaseSettingsPage from './features/settings/PurchaseSettingsPage.jsx';
+const purchaseOnly=Boolean(window.desktopApp?.purchaseOnly);
+const EditionSettingsPage=purchaseOnly?PurchaseSettingsPage:SettingsPage;
 
 function App() {
   const [state, setState] = useState(loadState);
-  const [page, setPage] = useState('reports');
+  const [page, setPage] = useState(purchaseOnly?'purchaseOrders':'reports');
   const [selectedDate, setSelectedDate] = useState(todayISO);
   const [liveToday, setLiveToday] = useState(todayISO);
   const [filter, setFilter] = useState('');
@@ -34,7 +37,7 @@ function App() {
   const [sectionEditing,setSectionEditing] = useState({reports:false,pending:false,purchaseOrders:false,banks:false,loans:false,settings:false,companies:false,suppliers:false});
   const [toast,setToast] = useState(null);
   const [storageInfo,setStorageInfo] = useState(null);
-  const [updateStatus,setUpdateStatus] = useState({currentVersion:'4.2.7',source:{owner:'Yahiaza',repo:'Finance---Loan',autoCheck:true},configured:true,checked:false,progress:0,downloading:false,downloadedPath:''});
+  const [updateStatus,setUpdateStatus] = useState({currentVersion:'4.2.8',source:{owner:'Yahiaza',repo:'Finance---Loan',autoCheck:true},configured:true,checked:false,progress:0,downloading:false,downloadedPath:''});
   const [centralStatus,setCentralStatus]=useState({enabled:false,configured:false,authenticated:false,connected:false,serverUrl:'',username:'',revision:null});
   const [accessStatus,setAccessStatus]=useState({enabled:false,configured:false,connected:false,databasePath:'',revision:null});
   const stateRef=useRef(state);
@@ -187,7 +190,7 @@ function App() {
   useEffect(() => {
     // Keep localStorage as a lightweight compatibility/fallback copy.
     localStorage.setItem('financial-reports-state-v3', JSON.stringify(state));
-    if (!desktopStorageReady || !window.desktopApp?.saveState) return;
+    if (!desktopStorageReady || !window.desktopApp?.saveState || (purchaseOnly&&(!accessStatus.enabled||!accessStatus.connected))) return;
     const generation=++saveGeneration.current;
     const savedSnapshot=state;
     const timer = setTimeout(() => {
@@ -216,7 +219,7 @@ function App() {
       });
     }, 700);
     return () => {clearTimeout(timer);if(saveGeneration.current===generation)saveGeneration.current+=1;};
-  }, [state, desktopStorageReady]);
+  }, [state, desktopStorageReady, accessStatus.enabled, accessStatus.connected]);
 
   useEffect(()=>{
     if(!centralStatus.enabled||!desktopStorageReady||!window.desktopApp?.syncCentralState)return;
@@ -524,9 +527,10 @@ function App() {
     {window.desktopApp?.isElectron && <DesktopTitleBar/>}
     <Sidebar page={page} setPage={setPage} theme={theme} onToggleTheme={()=>setTheme(t=>t==='dark'?'light':'dark')}/>
     <main className="content">
+      {purchaseOnly&&!accessStatus.enabled&&<div className="central-offline-banner">افتح «الإعدادات» واختر قاعدة Access المشتركة الموجودة لبدء إدخال طلبات الشراء وإرفاق الملفات.</div>}
       {((centralStatus.enabled&&!centralStatus.connected)||(accessStatus.enabled&&!accessStatus.connected))&&<div className="central-offline-banner">تعذر الوصول إلى قاعدة البيانات المشتركة — تم إيقاف التعديل لحماية البيانات. افتح «الإعدادات والأقسام» لمراجعة الاتصال.</div>}
       <DateHeader selectedDate={selectedDate} setSelectedDate={setSelectedDate} shiftDay={shiftDay} onExport={exportJson} onImport={importJson}
-        showEditActions={['reports','pending','purchaseOrders','banks','loans','settings','companies','suppliers'].includes(page)&&(!centralStatus.enabled||centralStatus.connected&&centralStatus.user?.role!=='viewer')&&(!accessStatus.enabled||accessStatus.connected)}
+        showEditActions={['reports','pending','purchaseOrders','banks','loans','settings','companies','suppliers'].includes(page)&&(!centralStatus.enabled||centralStatus.connected&&centralStatus.user?.role!=='viewer')&&(!accessStatus.enabled||accessStatus.connected)&&(!purchaseOnly||page==='purchaseOrders'&&accessStatus.enabled&&accessStatus.connected)}
         isSectionEditing={Boolean(sectionEditing[page])}
         onEditSection={()=>setSectionEditing(s=>({...s,[page]:true}))}
         onSaveSection={()=>{
@@ -544,7 +548,7 @@ function App() {
         {page==='loans' && <LoansPage loans={state.loans} isEditing={sectionEditing.loans} onChange={updater=>setState(s=>({...s,loans:typeof updater==='function'?updater(s.loans):updater}))} onPrint={()=>printReport('loan')}/>}
         {page==='loanStats' && <LoansOverviewPage loans={state.loans} onPrint={(mode='loan-overview')=>printReport(mode)}/>}
         {page==='banks' && <BankBalancesPage banks={state.banks} departments={state.departments} selectedDate={selectedDate} isEditing={sectionEditing.banks} onChange={banks=>setState(s=>({...s,banks}))} onPrint={()=>printReport('banks')} onNotify={setToast}/>}
-        {page==='settings' && <SettingsPage departments={state.departments} isEditing={sectionEditing.settings} onChange={departments=>setState(s=>({...s,departments}))} storageInfo={storageInfo} updateStatus={updateStatus}
+        {page==='settings' && <EditionSettingsPage departments={state.departments} isEditing={sectionEditing.settings} onChange={departments=>setState(s=>({...s,departments}))} storageInfo={storageInfo} updateStatus={updateStatus}
           centralStatus={centralStatus}
           accessStatus={accessStatus}
           onConfigureCentral={async url=>{const r=await window.desktopApp?.configureCentralServer?.(url);setCentralStatus(s=>({...s,...r,connected:false}));setToast(r?.ok?{tone:'success',title:'تم الوصول إلى السيرفر',message:'العنوان صحيح. سجل الدخول الآن.'}:{tone:'error',title:'تعذر الوصول إلى السيرفر',message:r?.error||'تحقق من العنوان والشبكة.'});return Boolean(r?.ok);}}

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopApp', {
   isElectron: true,
+  purchaseOnly: process.argv.includes('--purchase-only'),
   getVersion: () => ipcRenderer.invoke('desktop:get-version'),
   getUpdateStatus: () => ipcRenderer.invoke('update:get-status'),
   saveUpdateSettings: (value) => ipcRenderer.invoke('update:save-settings', value),

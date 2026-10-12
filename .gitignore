@@ -4,6 +4,8 @@ server/.env
 server/data/
 dist/
 release/
+release-purchase-check/
+release-purchase-verify/
 *.log
 *.accdb
 *.laccdb

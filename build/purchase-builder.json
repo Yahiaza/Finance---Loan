@@ -1,0 +1,47 @@
+{
+  "appId": "com.yahia.purchaseorders",
+  "productName": "طلبات الشراء",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json",
+    "build/**/*"
+  ],
+  "win": {
+    "target": [
+      "portable"
+    ],
+    "icon": "build/icon.ico"
+  },
+  "portable": {
+    "artifactName": "Purchase-Orders-Portable-${version}-${arch}.exe",
+    "buildUniversalInstaller": false
+  },
+  "asar": true,
+  "compression": "store",
+  "npmRebuild": false,
+  "electronLanguages": [
+    "en-US"
+  ],
+  "extraResources": [
+    {
+      "from": "build/icon.ico",
+      "to": "financial-app-icon.ico"
+    },
+    {
+      "from": "build/icon.png",
+      "to": "financial-app-icon.png"
+    },
+    {
+      "from": "electron/access-bridge.ps1",
+      "to": "access-bridge.ps1"
+    }
+  ],
+  "extraMetadata": {
+    "name": "purchase-orders-manager",
+    "appVariant": "purchase"
+  }
+}

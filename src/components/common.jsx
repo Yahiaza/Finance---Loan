@@ -61,7 +61,7 @@ function DesktopTitleBar() {
   useEffect(()=>{ window.desktopApp?.isWindowMaximized?.().then(setMaximized).catch(()=>{}); },[]);
   const toggle=async()=>{ const state=await window.desktopApp?.toggleMaximizeWindow?.(); if(typeof state==='boolean') setMaximized(state); };
   return <div className="desktop-titlebar">
-    <div className="desktop-title-drag"><img src="./app-icon.png"/><span>الإدارة المالية</span></div>
+    <div className="desktop-title-drag"><img src="./app-icon.png"/><span>{window.desktopApp?.purchaseOnly?'طلبات الشراء':'الإدارة المالية'}</span></div>
     <div className="desktop-window-actions">
       <button onClick={()=>window.desktopApp?.minimizeWindow?.()} title="تصغير"><Minus/></button>
       <button onClick={toggle} title={maximized?'استعادة':'تكبير'}>{maximized?<Square/>:<Maximize2/>}</button>
@@ -74,6 +74,13 @@ function Sidebar({page,setPage,theme='light',onToggleTheme}) {
   const [loansOpen,setLoansOpen]=useState(page==='loans' || page==='loanStats');
   useEffect(()=>{ if(page==='loans' || page==='loanStats') setLoansOpen(true); },[page]);
   const loansActive=page==='loans' || page==='loanStats';
+  if(window.desktopApp?.purchaseOnly)return <aside className="sidebar">
+    <div className="brand"><div className="brand-icon"><ShoppingCart/></div><div><b>طلبات الشراء</b><span>نسخة المحاسبين — Access المشتركة</span></div></div>
+    <button className={page==='purchaseOrders'?'active':''} onClick={()=>setPage('purchaseOrders')}><ShoppingCart/> طلبات الشراء</button>
+    <div className="side-spacer"/>
+    <button onClick={onToggleTheme}>{theme==='dark'?<Sun/>:<Moon/>} {theme==='dark'?'الوضع الفاتح':'الوضع الداكن'}</button>
+    <button className={page==='settings'?'active':''} onClick={()=>setPage('settings')}><Settings/> الإعدادات</button>
+  </aside>;
   return <aside className="sidebar">
     <div className="brand"><div className="brand-icon brand-image"><img src="./app-icon.png" alt="أيقونة الإدارة المالية"/></div><div><b>الإدارة المالية</b><span>السجل المالي اليومي</span></div></div>
     <div className="side-label">التقارير</div>
@@ -183,8 +190,8 @@ function DateHeader({selectedDate,setSelectedDate,shiftDay,onExport,onImport,sho
         <button className={`header-save-btn ${!isSectionEditing?'locked':''}`} disabled={!isSectionEditing} onClick={onSaveSection} title="حفظ وإغلاق التعديل"><Save size={16}/> حفظ</button>
         <button className={`header-edit-btn ${isSectionEditing?'active':''}`} disabled={isSectionEditing} onClick={onEditSection} title="السماح بالتعديل وإضافة البيانات"><Pencil size={16}/> تعديل</button>
       </div>}
-      <button className="export-btn import-json-btn" onClick={onImport} title="استيراد نسخة JSON محفوظة"><FolderInput size={16}/> استيراد JSON</button>
-      <button className="export-btn" onClick={onExport} title="حفظ نسخة JSON لكل البيانات"><FileJson2 size={16}/> تصدير JSON</button>
+      {!window.desktopApp?.purchaseOnly&&<><button className="export-btn import-json-btn" onClick={onImport} title="استيراد نسخة JSON محفوظة"><FolderInput size={16}/> استيراد JSON</button>
+      <button className="export-btn" onClick={onExport} title="حفظ نسخة JSON لكل البيانات"><FileJson2 size={16}/> تصدير JSON</button></>}
       <button className="today-btn" disabled={isToday} onClick={()=>safeSet(todayISO)}><RotateCcw size={16}/> اليوم</button>
       <div className="date-navigator">
         <button className="day-nav" onClick={()=>shiftDay(-1)} title="اليوم السابق"><ChevronRight/></button>

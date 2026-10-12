@@ -5,6 +5,7 @@ const crypto=require('crypto');
 const zlib=require('zlib');
 const {execFile}=require('child_process');
 const compressedTemplate=require('./access-template.cjs');
+const {purchaseOnly,restrictPurchaseWrite}=require('./purchase-scope.cjs');
 
 let baseState=null;
 let revision=null;
@@ -114,6 +115,7 @@ async function writeState(state,baseRevision){
 
 async function saveState(localState){
   if(baseState===null||revision===null)await loadState();
+  if(purchaseOnly)localState=restrictPurchaseWrite(baseState,localState);
   if(deepEqual(localState,baseState))return {ok:true,state:clone(baseState),revision,unchanged:true};
   let result=await writeState(localState,revision);
   if(result.ok){baseState=clone(localState);revision=Number(result.revision);connected=true;return {ok:true,state:clone(localState),revision};}
@@ -126,6 +128,7 @@ async function saveState(localState){
 
 async function syncState(localState){
   if(baseState===null||revision===null)return loadState();
+  if(purchaseOnly)localState=restrictPurchaseWrite(baseState,localState);
   const cfg=readConfig(),remoteResult=await readPath(cfg.databasePath);
   if(remoteResult.revision===revision)return {ok:true,state:clone(localState),revision,unchanged:true};
   const merged=mergeStates(baseState,localState,remoteResult.state);

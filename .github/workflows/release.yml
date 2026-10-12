@@ -29,6 +29,16 @@ jobs:
         run: npm run build:portable:ia32
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Test data protection
+        run: node --test electron/purchase-scope.test.cjs electron/access-purchase.test.cjs src/features/suppliers/transferDepartments.test.mjs
+      - name: Build Purchase Orders 64-bit
+        run: npm run build:purchase:x64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Build Purchase Orders 32-bit
+        run: npm run build:purchase:ia32
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Package Central Server
         shell: pwsh
         run: |
@@ -50,7 +60,10 @@ jobs:
           if (-not $portable64) { throw "64-bit Portable EXE was not generated." }
           if (-not $portable32) { throw "32-bit Portable EXE was not generated." }
           if (-not $server) { throw "Central server package was not generated." }
-          $files = @($portable64, $portable32) + @($server)
+          $purchase64 = Get-ChildItem -Path release -Filter "Purchase-Orders-Portable-*-x64.exe" | Select-Object -First 1 -ExpandProperty FullName
+          $purchase32 = Get-ChildItem -Path release -Filter "Purchase-Orders-Portable-*-ia32.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $purchase64 -or -not $purchase32) { throw "Purchase Orders editions were not generated." }
+          $files = @($portable64, $portable32, $purchase64, $purchase32) + @($server)
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag $files --title $tag --generate-notes
