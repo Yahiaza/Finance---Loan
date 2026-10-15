@@ -360,7 +360,7 @@ function saveState(state, options = {}) {
     normalized.suppliers.forEach((x,i)=>{ const id=safeId(x?.id,'supplier',i); q.supplier.run(id,safeString(x?.supplierNumber),safeString(x?.name),safeString(x?.iban),safeString(x?.phone),safeString(x?.email),safeString(x?.address),safeString(x?.taxNumber),i,jsonText({...x,id})); });
     normalized.supplierTransfers.forEach((x,i)=>{ const id=safeId(x?.id,'supplier-transfer',i); q.supplierTransfer.run(id,safeString(x?.supplierNumber),safeString(x?.supplierName),safeString(x?.amount),i,jsonText({...x,id})); });
     setMetaInTransaction(database,'supplier_transfer_department',normalized.supplierTransferDepartment);
-    normalized.purchaseOrders.forEach((x,i)=>{const id=safeId(x?.id,'purchase-order',i);q.purchaseOrder.run(id,safeString(x?.orderNumber),safeString(x?.department),safeString(x?.amount),safeString(x?.statement),safeString(x?.submissionDate),safeString(x?.requester),x?.status==='spent'?'spent':'unspent',i,jsonText({...x,id}));});
+    normalized.purchaseOrders.forEach((x,i)=>{const id=safeId(x?.id,'purchase-order',i);q.purchaseOrder.run(id,safeString(x?.orderNumber),safeString(x?.department),safeString(x?.amount),safeString(x?.statement),safeString(x?.submissionDate),safeString(x?.requester),['spent','partial'].includes(x?.status)?x.status:'unspent',i,jsonText({...x,id}));});
     setMetaInTransaction(database,'purchase_order_departments',jsonText(normalized.purchaseOrderDepartments));
     setMetaInTransaction(database,'purchase_requesters',jsonText(normalized.purchaseRequesters));
 

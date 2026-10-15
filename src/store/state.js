@@ -1,4 +1,5 @@
 import { uid, todayISO, cleanLegacyNotes, parseAmount } from '../utils/appUtils.js';
+import {purchaseStatus,transferAttachments} from '../features/purchaseOrders/purchaseOrderModel.mjs';
 
 const initialState = {
   departments: ['مستشفى', 'بصريات', 'تجهيزات'],
@@ -58,7 +59,8 @@ function normalizeState(raw) {
     purchaseOrders: (state.purchaseOrders || []).map(x=>({
       id:x.id||uid(), orderNumber:String(x.orderNumber??''), department:String(x.department??''),
       amount:String(x.amount??''), statement:String(x.statement??''), submissionDate:x.submissionDate||todayISO,
-      requester:String(x.requester??''), status:x.status==='spent'?'spent':'unspent',
+      requester:String(x.requester??''), status:purchaseStatus(x.status), paidAmount:String(x.paidAmount??''),
+      transferAttachments:transferAttachments(x),
       orderAttachment:x.orderAttachment&&typeof x.orderAttachment==='object'?x.orderAttachment:null,
       transferAttachment:x.transferAttachment&&typeof x.transferAttachment==='object'?x.transferAttachment:null,
       createdAt:x.createdAt||new Date().toISOString()

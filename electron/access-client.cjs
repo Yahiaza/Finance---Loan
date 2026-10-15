@@ -5,6 +5,7 @@ const crypto=require('crypto');
 const zlib=require('zlib');
 const {execFile}=require('child_process');
 const compressedTemplate=require('./access-template.cjs');
+const {purchaseAttachmentSlots,mirrorTransferAttachment}=require('./purchase-attachments.cjs');
 const {purchaseOnly,restrictPurchaseWrite}=require('./purchase-scope.cjs');
 
 let baseState=null;
@@ -156,14 +157,14 @@ function copyAttachment(source,displayName){
 }
 function migrateAttachments(state){
   const next=clone(state);
-  for(const order of next.purchaseOrders||[])for(const key of ['orderAttachment','transferAttachment']){
-    const attachment=order[key];if(!attachment||attachment.remote)continue;
+  for(const order of next.purchaseOrders||[]){for(const slot of purchaseAttachmentSlots(order)){
+    const attachment=slot.attachment;if(!attachment||attachment.remote)continue;
     const resolved=resolveAttachment(attachment);
     if(attachment.sharedAccess&&resolved&&fs.existsSync(resolved)){
       const fileName=path.basename(resolved),{path:_legacyPath,...rest}=attachment;
-      order[key]={...rest,fileName,relativePath:path.join('finance-attachments',fileName),storage:'access',sharedAccess:true};
-    }else if(resolved&&fs.existsSync(resolved))order[key]=copyAttachment(resolved,attachment.name);
-  }
+      slot.set({...rest,fileName,relativePath:path.join('finance-attachments',fileName),storage:'access',sharedAccess:true});
+    }else if(resolved&&fs.existsSync(resolved))slot.set(copyAttachment(resolved,attachment.name));
+  }mirrorTransferAttachment(order);}
   return next;
 }
 

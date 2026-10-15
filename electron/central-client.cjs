@@ -3,6 +3,7 @@ const http=require('http');
 const https=require('https');
 const fs=require('fs');
 const path=require('path');
+const {purchaseAttachmentSlots,mirrorTransferAttachment}=require('./purchase-attachments.cjs');
 
 let baseState=null;
 let revision=null;
@@ -149,11 +150,12 @@ async function uploadFile(filePath,displayName){
 async function migrateAttachments(state){
   const next=clone(state);
   for(const order of next.purchaseOrders||[]){
-    for(const key of ['orderAttachment','transferAttachment']){
-      const attachment=order[key];
+    for(const slot of purchaseAttachmentSlots(order)){
+      const attachment=slot.attachment;
       if(attachment?.remote&&attachment.id)continue;
-      if(attachment?.path&&fs.existsSync(attachment.path))order[key]=await uploadFile(attachment.path,attachment.name);
+      if(attachment?.path&&fs.existsSync(attachment.path))slot.set(await uploadFile(attachment.path,attachment.name));
     }
+    mirrorTransferAttachment(order);
   }
   return next;
 }

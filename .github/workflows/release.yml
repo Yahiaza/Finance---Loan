@@ -30,7 +30,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Test data protection
-        run: node --test electron/purchase-scope.test.cjs electron/access-purchase.test.cjs src/features/suppliers/transferDepartments.test.mjs
+        run: node --test electron/purchase-scope.test.cjs electron/access-purchase.test.cjs electron/purchase-persistence.test.cjs src/features/suppliers/transferDepartments.test.mjs src/features/purchaseOrders/purchaseOrderModel.test.mjs
       - name: Build Purchase Orders 64-bit
         run: npm run build:purchase:x64
         env:
