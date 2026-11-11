@@ -13,6 +13,7 @@ const initialState = {
   loans: [],
   suppliers: [],
   supplierTransfers: [],
+  supplierTransferTemplates: [],
   supplierTransferDepartment: '',
   purchaseOrders: [],
   purchaseOrderDepartments: [],
@@ -48,9 +49,13 @@ function normalizeState(raw) {
     expenses: fix(state.expenses, 'expense'),
     pending: fix(state.pending, 'pending'),
     suppliers: (state.suppliers || []).map((x,i)=>({id:x.id||uid(),supplierNumber:String(x.supplierNumber??''),name:String(x.name??''),iban:String(x.iban??''),phone:String(x.phone??''),email:String(x.email??''),address:String(x.address??''),taxNumber:String(x.taxNumber??'')})),
+    supplierTransferTemplates: Array.isArray(state.supplierTransferTemplates) ? state.supplierTransferTemplates.filter(x=>x?.id).map(x=>({
+      id:String(x.id),name:String(x.name??''),date:x.date||todayISO,department:String(x.department??''),createdAt:String(x.createdAt??'')
+    })) : [],
     supplierTransfers: (state.supplierTransfers || []).map(x=>({
       id:x.id||uid(), supplierNumber:String(x.supplierNumber??''), supplierName:String(x.supplierName??''), amount:String(x.amount??''),
       date:x.date||todayISO, department:String(x.department??legacyTransferDepartment),
+      ...(x.templateId?{templateId:String(x.templateId)}:{}),
       status:x.status==='transferred'?'transferred':'pending', transferredAt:x.transferredAt||null
     })),
     supplierTransferDepartment: legacyTransferDepartment,

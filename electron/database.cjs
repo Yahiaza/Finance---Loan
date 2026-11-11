@@ -320,6 +320,7 @@ function saveState(state, options = {}) {
     loans: Array.isArray(state.loans) ? state.loans : [],
     suppliers: Array.isArray(state.suppliers) ? state.suppliers : [],
     supplierTransfers: Array.isArray(state.supplierTransfers) ? state.supplierTransfers : [],
+    supplierTransferTemplates: Array.isArray(state.supplierTransferTemplates) ? state.supplierTransferTemplates : [],
     supplierTransferDepartment: safeString(state.supplierTransferDepartment)
     ,purchaseOrders: Array.isArray(state.purchaseOrders) ? state.purchaseOrders : []
     ,purchaseOrderDepartments: Array.isArray(state.purchaseOrderDepartments) ? state.purchaseOrderDepartments : []
@@ -360,6 +361,7 @@ function saveState(state, options = {}) {
     normalized.suppliers.forEach((x,i)=>{ const id=safeId(x?.id,'supplier',i); q.supplier.run(id,safeString(x?.supplierNumber),safeString(x?.name),safeString(x?.iban),safeString(x?.phone),safeString(x?.email),safeString(x?.address),safeString(x?.taxNumber),i,jsonText({...x,id})); });
     normalized.supplierTransfers.forEach((x,i)=>{ const id=safeId(x?.id,'supplier-transfer',i); q.supplierTransfer.run(id,safeString(x?.supplierNumber),safeString(x?.supplierName),safeString(x?.amount),i,jsonText({...x,id})); });
     setMetaInTransaction(database,'supplier_transfer_department',normalized.supplierTransferDepartment);
+    setMetaInTransaction(database,'supplier_transfer_templates',jsonText(normalized.supplierTransferTemplates));
     normalized.purchaseOrders.forEach((x,i)=>{const id=safeId(x?.id,'purchase-order',i);q.purchaseOrder.run(id,safeString(x?.orderNumber),safeString(x?.department),safeString(x?.amount),safeString(x?.statement),safeString(x?.submissionDate),safeString(x?.requester),['spent','partial'].includes(x?.status)?x.status:'unspent',i,jsonText({...x,id}));});
     setMetaInTransaction(database,'purchase_order_departments',jsonText(normalized.purchaseOrderDepartments));
     setMetaInTransaction(database,'purchase_requesters',jsonText(normalized.purchaseRequesters));
@@ -452,6 +454,7 @@ function loadState() {
   const suppliers=database.prepare('SELECT * FROM suppliers ORDER BY sort_order,rowid').all().map(r=>({...parseJson(r.payload_json,{}),id:r.id,supplierNumber:r.supplier_number,name:r.name,iban:r.iban,phone:r.phone,email:r.email,address:r.address,taxNumber:r.tax_number}));
   const supplierTransfers=database.prepare('SELECT * FROM supplier_transfers ORDER BY sort_order,rowid').all().map(r=>({...parseJson(r.payload_json,{}),id:r.id,supplierNumber:r.supplier_number,supplierName:r.supplier_name,amount:r.amount}));
   const supplierTransferDepartment=getMeta('supplier_transfer_department','');
+  const supplierTransferTemplates=parseJson(getMeta('supplier_transfer_templates','[]'),[]);
   const purchaseOrderDepartments=parseJson(getMeta('purchase_order_departments','[]'),[]);
   const purchaseRequesters=parseJson(getMeta('purchase_requesters','[]'),[]);
   const purchaseOrders=database.prepare('SELECT * FROM purchase_orders ORDER BY sort_order,rowid').all().map(r=>({...parseJson(r.payload_json,{}),id:r.id,orderNumber:r.order_number,department:r.department,amount:r.amount,statement:r.statement,submissionDate:r.submission_date,requester:r.requester,status:r.status}));
@@ -502,7 +505,7 @@ function loadState() {
     installmentCount:Number(r.installment_count), createdAt:r.created_at, rows:installments.get(r.id) || []
   }));
 
-  return { departments, companies, incomes, expenses, pending, banks, loans, suppliers, supplierTransfers, supplierTransferDepartment, purchaseOrders, purchaseOrderDepartments, purchaseRequesters };
+  return { departments, companies, incomes, expenses, pending, banks, loans, suppliers, supplierTransfers, supplierTransferTemplates, supplierTransferDepartment, purchaseOrders, purchaseOrderDepartments, purchaseRequesters };
 }
 
 const numericAmount = value => {

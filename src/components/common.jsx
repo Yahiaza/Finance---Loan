@@ -152,10 +152,10 @@ function MiniDateCalendar({value,onChange,onClose}) {
   const changeMonth=delta=>{const d=new Date(view.y,view.m-1+delta,1); const ym=`${d.getFullYear()}-${pad(d.getMonth()+1)}`; const todayYM=todayISO.slice(0,7); if(ym>todayYM) return; setView({y:d.getFullYear(),m:d.getMonth()+1});};
   const choose=day=>{const iso=`${view.y}-${pad(view.m)}-${pad(day)}`; if(iso>todayISO) return; onChange(iso); onClose();};
   return <div className="mini-calendar-popover">
-    <div className="mini-calendar-head"><button onClick={()=>changeMonth(1)} disabled={`${view.y}-${pad(view.m)}`>=todayISO.slice(0,7)}><ChevronRight/></button><strong>{monthName}</strong><button onClick={()=>changeMonth(-1)}><ChevronLeft/></button></div>
+    <div className="mini-calendar-head"><button type="button" onClick={()=>changeMonth(1)} disabled={`${view.y}-${pad(view.m)}`>=todayISO.slice(0,7)}><ChevronRight/></button><strong>{monthName}</strong><button type="button" onClick={()=>changeMonth(-1)}><ChevronLeft/></button></div>
     <div className="mini-weekdays">{['سبت','أحد','إثن','ثلا','أرب','خمي','جمع'].map(x=><span key={x}>{x}</span>)}</div>
-    <div className="mini-days">{cells.map((day,i)=>day===null?<span key={`e${i}`}/>:<button key={day} className={`${value===`${view.y}-${pad(view.m)}-${pad(day)}`?'selected ':''}${`${view.y}-${pad(view.m)}-${pad(day)}`===todayISO?'today':''}`} disabled={`${view.y}-${pad(view.m)}-${pad(day)}`>todayISO} onClick={()=>choose(day)}>{day}</button>)}</div>
-    <div className="mini-calendar-foot"><button onClick={()=>{onChange(todayISO);onClose();}}>الذهاب إلى اليوم</button></div>
+    <div className="mini-days">{cells.map((day,i)=>day===null?<span key={`e${i}`}/>:<button type="button" key={day} className={`${value===`${view.y}-${pad(view.m)}-${pad(day)}`?'selected ':''}${`${view.y}-${pad(view.m)}-${pad(day)}`===todayISO?'today':''}`} disabled={`${view.y}-${pad(view.m)}-${pad(day)}`>todayISO} onClick={()=>choose(day)}>{day}</button>)}</div>
+    <div className="mini-calendar-foot"><button type="button" onClick={()=>{onChange(todayISO);onClose();}}>الذهاب إلى اليوم</button></div>
   </div>;
 }
 

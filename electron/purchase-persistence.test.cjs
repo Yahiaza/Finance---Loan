@@ -7,7 +7,7 @@ const vm=require('node:vm');
 const {createRequire}=require('node:module');
 const {purchaseAttachmentSlots,mirrorTransferAttachment}=require('./purchase-attachments.cjs');
 
-test('SQLite reopening preserves partial status, paid amount and every transfer attachment',async()=>{
+test('SQLite reopening preserves purchase payments and supplier template links',async()=>{
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'purchase-db-'));
   const actualRequire=createRequire(path.join(__dirname,'database.cjs'));
   const module={exports:{}};
@@ -18,11 +18,19 @@ test('SQLite reopening preserves partial status, paid amount and every transfer 
   try{
     vm.runInNewContext(fs.readFileSync(path.join(__dirname,'database.cjs'),'utf8'),context);
     database=module.exports;await database.initialize();
-    database.saveState({purchaseOrders:[{id:'partial',orderNumber:'P1',amount:'3000',status:'partial',paidAmount:'1250.50',transferAttachments:[{attachmentId:'a',fileName:'a.png'},{attachmentId:'b',fileName:'b.pdf'}]}]});
+    database.saveState({
+      purchaseOrders:[{id:'partial',orderNumber:'P1',amount:'3000',status:'partial',paidAmount:'1250.50',transferAttachments:[{attachmentId:'a',fileName:'a.png'},{attachmentId:'b',fileName:'b.pdf'}]}],
+      supplierTransferTemplates:[{id:'completed',name:'مشتريات',department:'المشتريات',date:'2026-11-11'},{id:'empty',name:'صيانة',department:'الصيانة',date:'2026-11-11'}],
+      supplierTransfers:[{id:'payment',templateId:'completed',amount:'1400',status:'transferred',date:'2026-11-11',department:'المشتريات'}]
+    });
     database.close();
-    const row=database.loadState().purchaseOrders[0];
+    const state=database.loadState();
+    const row=state.purchaseOrders[0];
     assert.equal(row.status,'partial');assert.equal(row.paidAmount,'1250.50');
     assert.deepEqual(Array.from(row.transferAttachments,x=>x.fileName),['a.png','b.pdf']);
+    assert.deepEqual(Array.from(state.supplierTransferTemplates,x=>x.id),['completed','empty']);
+    assert.equal(state.supplierTransfers[0].templateId,'completed');
+    assert.equal(state.supplierTransfers[0].status,'transferred');
   }finally{database?.close();fs.rmSync(directory,{recursive:true,force:true});}
 });
 

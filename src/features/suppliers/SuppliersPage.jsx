@@ -1,8 +1,8 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
-import {Plus,Trash2,Upload,FileSpreadsheet,Printer,Eye,Search,UserRound,History,CheckCircle2,Clock3} from 'lucide-react';
+import {Plus,Trash2,Upload,FileSpreadsheet,Printer,Eye,Search,UserRound,History,CheckCircle2,Clock3,FolderOpen} from 'lucide-react';
 import {RtlDatePicker} from '../../components/common.jsx';
 import {money,uid,parseAmount,formatAmountInput,todayISO,displayDate,requestConfirm} from '../../utils/appUtils.js';
-import {renameTransferDepartment} from './transferDepartments.mjs';
+import {buildTransferRegister,renameTemplateDepartment} from './transferTemplates.mjs';
 import vazirmatnFont from '../../assets/fonts/Vazirmatn-Variable.woff2?inline';
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
@@ -20,18 +20,26 @@ function Preview({html,onClose}){
 
 function SuppliersPage({state,isEditing=false,onChange,onNotify}){
   const suppliers=state.suppliers||[],transfers=state.supplierTransfers||[];
-  const transferDepartments=useMemo(()=>Array.from(new Set([state.supplierTransferDepartment,...transfers.map(x=>x.department)].map(x=>String(x||'').trim()).filter(Boolean))),[state.supplierTransferDepartment,transfers]);
+  const templates=state.supplierTransferTemplates||[];
+  const register=useMemo(()=>buildTransferRegister(templates,transfers),[templates,transfers]);
+  const transferDepartments=useMemo(()=>Array.from(new Set([state.supplierTransferDepartment,...(state.departments||[]),...register.map(x=>x.department)].map(x=>String(x||'').trim()).filter(Boolean))),[state.supplierTransferDepartment,state.departments,register]);
   const [tab,setTab]=useState('suppliers'),[preview,setPreview]=useState(null),[query,setQuery]=useState(''),[supplierPage,setSupplierPage]=useState(1);
   const [supplierDraft,setSupplierDraft]=useState(emptySupplier);
-  const [selectedDate,setSelectedDate]=useState(todayISO),[selectedDepartment,setSelectedDepartment]=useState(()=>state.supplierTransferDepartment||'');
-  const [departmentDraft,setDepartmentDraft]=useState(()=>state.supplierTransferDepartment||'');
+  const [templateId,setTemplateId]=useState(null),[templateDraft,setTemplateDraft]=useState(null),[registerQuery,setRegisterQuery]=useState('');
+  const activeTemplate=register.find(x=>x.id===templateId)||register[0];
+  const selectedDate=activeTemplate?.date||todayISO,selectedDepartment=activeTemplate?.department||'';
+  const [departmentDraft,setDepartmentDraft]=useState(selectedDepartment);
+  const transfersRef=useRef(transfers);
+  transfersRef.current=transfers;
   const [importRows,setImportRows]=useState([]),[map,setMap]=useState({num:'A',name:'B',iban:'C',from:2,to:''});
   const fileRef=useRef(null),transferSupplierRefs=useRef({}),transferAmountRefs=useRef({}),focusNewTransfer=useRef(false);
-  useEffect(()=>setDepartmentDraft(selectedDepartment),[selectedDepartment,selectedDate]);
+  useEffect(()=>setDepartmentDraft(selectedDepartment),[selectedDepartment,activeTemplate?.id]);
+  useEffect(()=>{if(!isEditing)setTemplateDraft(null);},[isEditing]);
   const filtered=useMemo(()=>suppliers.filter(x=>`${x.supplierNumber} ${x.name} ${x.iban}`.toLowerCase().includes(query.toLowerCase())).sort(sortSuppliers),[suppliers,query]);
   const supplierPageCount=Math.max(1,Math.ceil(filtered.length/SUPPLIERS_PER_PAGE));
   const pagedSuppliers=useMemo(()=>filtered.slice((supplierPage-1)*SUPPLIERS_PER_PAGE,supplierPage*SUPPLIERS_PER_PAGE),[filtered,supplierPage]);
-  const visibleTransfers=useMemo(()=>transfers.filter(x=>x.date===selectedDate&&(!selectedDepartment||x.department===selectedDepartment)),[transfers,selectedDate,selectedDepartment]);
+  const visibleTransfers=activeTemplate?.rows||[];
+  const matchingTemplates=register.filter(group=>`${group.name} ${group.department} ${group.date} ${displayDate(group.date)}`.toLowerCase().includes(registerQuery.trim().toLowerCase()));
   const transferSummary=useMemo(()=>({total:visibleTransfers.reduce((n,x)=>n+parseAmount(x.amount),0),done:visibleTransfers.filter(x=>x.status==='transferred').reduce((n,x)=>n+parseAmount(x.amount),0),pending:visibleTransfers.filter(x=>x.status!=='transferred').reduce((n,x)=>n+parseAmount(x.amount),0)}),[visibleTransfers]);
   useEffect(()=>{setSupplierPage(page=>Math.min(page,supplierPageCount));},[supplierPageCount]);
   useEffect(()=>{if(!focusNewTransfer.current)return;const row=[...visibleTransfers].reverse().find(x=>!x.supplierNumber&&!x.amount);if(row&&transferSupplierRefs.current[row.id]){focusNewTransfer.current=false;transferSupplierRefs.current[row.id].focus();}},[visibleTransfers]);
@@ -52,19 +60,28 @@ function SuppliersPage({state,isEditing=false,onChange,onNotify}){
     onNotify?.({tone:'success',title:'تمت إضافة المورد',message:`تمت إضافة ${item.name} في ترتيبه داخل القائمة.`});
   };
   const deleteSupplier=id=>onChange({suppliers:suppliers.filter(x=>x.id!==id)});
+  const openTemplate=id=>{setTemplateId(id);setTemplateDraft(null);setTab('transfers');};
+  const startTemplate=()=>{setTemplateDraft({name:'',department:'',date:todayISO});setTab('transfers');};
+  const saveTemplate=e=>{
+    e.preventDefault();
+    if(!isEditing||!templateDraft?.department.trim()||!templateDraft.date)return;
+    const department=templateDraft.department.trim();
+    const template={id:uid(),name:templateDraft.name.trim()||'حوالات '+department,department,date:templateDraft.date,createdAt:new Date().toISOString()};
+    onChange({supplierTransferTemplates:[...templates,template]});
+    openTemplate(template.id);
+  };
   const commitDepartment=()=>{
-    const department=departmentDraft.trim();
-    if(!isEditing||!department){setDepartmentDraft(selectedDepartment);return;}
-    if(department===selectedDepartment){setDepartmentDraft(department);return;}
-    onChange({supplierTransferDepartment:department,supplierTransfers:renameTransferDepartment(transfers,selectedDate,selectedDepartment,department)});
-    setSelectedDepartment(department);setDepartmentDraft(department);
+    const patch=isEditing&&activeTemplate&&renameTemplateDepartment(templates,transfers,activeTemplate,departmentDraft);
+    if(!patch){setDepartmentDraft(selectedDepartment);return;}
+    setTemplateId(activeTemplate.id);
+    setDepartmentDraft(patch.supplierTransferDepartment);
+    onChange(patch);
   };
   const addTransfer=()=>{
     const department=selectedDepartment.trim();
-    if(!department){onNotify?.({tone:'error',title:'اكتب القسم أولًا',message:'اكتب اسم القسم الذي يطلب التحويل ثم أضف المورد.'});return;}
-    setSelectedDepartment(department);
+    if(!isEditing||!activeTemplate||!department)return;
     focusNewTransfer.current=true;
-    onChange({supplierTransferDepartment:department,supplierTransfers:[...transfers,{id:uid(),supplierNumber:'',supplierName:'',amount:'',date:selectedDate,department,status:'pending',transferredAt:null}]});
+    onChange({supplierTransferDepartment:department,supplierTransfers:[...transfers,{id:uid(),templateId:activeTemplate.id,supplierNumber:'',supplierName:'',amount:'',date:selectedDate,department,status:'pending',transferredAt:null}]});
   };
   const patchTransfer=(id,key,value)=>{
     const next=transfers.map(x=>{
@@ -86,7 +103,7 @@ function SuppliersPage({state,isEditing=false,onChange,onNotify}){
   };
   const deleteTransfer=async row=>{
     if(!(await requestConfirm(`سيتم مسح تحويل المورد ${row.supplierName||row.supplierNumber||'المحدد'} بمبلغ ${money.format(parseAmount(row.amount))} ر.س. هل تريد الاستمرار؟`,{title:'تأكيد مسح التحويل',confirmText:'نعم، مسح',cancelText:'إلغاء',tone:'danger'})))return;
-    onChange({supplierTransfers:transfers.filter(x=>x.id!==row.id)});
+    onChange({supplierTransfers:transfersRef.current.filter(x=>x.id!==row.id)});
     onNotify?.({tone:'success',title:'تم المسح بنجاح',message:'تم مسح التحويل من هذا التاريخ والقسم.'});
   };
   const supplierForTransfer=row=>String(row.supplierNumber||'').trim()?suppliers.find(x=>String(x.supplierNumber).trim()===String(row.supplierNumber).trim()):null;
@@ -95,7 +112,7 @@ function SuppliersPage({state,isEditing=false,onChange,onNotify}){
     const rows=one?[one]:suppliers;
     return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>${reportCss}</style></head><body><div class="paper">${one?`<div class="supplier-card"><h2>كارت المورد</h2><div class="supplier-card-grid"><div class="field"><small>رقم المورد</small><strong>${esc(one.supplierNumber)||'—'}</strong></div><div class="field"><small>اسم المورد</small><strong>${esc(one.name)||'—'}</strong></div><div class="field"><small>IBAN</small><strong>${esc(one.iban)||'—'}</strong></div><div class="field"><small>الهاتف</small><strong>${esc(one.phone)||'—'}</strong></div><div class="field"><small>البريد</small><strong>${esc(one.email)||'—'}</strong></div><div class="field"><small>الرقم الضريبي</small><strong>${esc(one.taxNumber)||'—'}</strong></div><div class="field" style="grid-column:1/-1"><small>العنوان</small><strong>${esc(one.address)||'—'}</strong></div></div></div>`:`<div class="head"><h1>بيان الموردين</h1><p>قائمة بيانات الموردين</p></div><table><thead><tr><th style="width:8%">م</th><th style="width:22%">رقم المورد</th><th>اسم المورد</th><th style="width:35%">رقم حساب IBAN المورد</th></tr></thead><tbody>${rows.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.supplierNumber)}</td><td>${esc(x.name)}</td><td>${esc(x.iban)}</td></tr>`).join('')}</tbody></table>`}</div></body></html>`;
   };
-  const transfersHtml=()=>`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>${reportCss}</style></head><body><div class="paper"><div class="head"><h1>بيان تحويلات الموردين</h1><p>التحويلات المسجلة حسب التاريخ والقسم</p></div><div class="meta"><span>القسم: ${esc(selectedDepartment||'كل الأقسام')}</span><span>التاريخ: ${esc(displayDate(selectedDate))}</span></div><div class="summary"><div><small>إجمالي المطلوب</small><strong>${money.format(transferSummary.total)} ر.س</strong></div><div><small>تم التحويل</small><strong>${money.format(transferSummary.done)} ر.س</strong></div><div><small>متبقي</small><strong>${money.format(transferSummary.pending)} ر.س</strong></div></div><table><thead><tr><th style="width:7%">م</th><th style="width:18%">رقم المورد</th><th>اسم المورد</th><th style="width:20%">المبلغ</th><th style="width:18%">الحالة</th></tr></thead><tbody>${visibleTransfers.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.supplierNumber)}</td><td>${esc(x.supplierName)}</td><td>${money.format(parseAmount(x.amount))} ر.س</td><td class="${x.status==='transferred'?'done':'pending'}">${x.status==='transferred'?'تم التحويل':'مطلوب التحويل'}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">لا توجد تحويلات في هذا التاريخ والقسم</td></tr>'}</tbody><tfoot><tr><td colspan="3">الإجمالي العام</td><td class="total">${money.format(transferSummary.total)} ر.س</td><td></td></tr></tfoot></table></div></body></html>`;
+  const transfersHtml=()=>`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>${reportCss}</style></head><body><div class="paper"><div class="head"><h1>بيان تحويلات الموردين</h1><p>${esc(activeTemplate?.name||'')}</p></div><div class="meta"><span>القسم: ${esc(selectedDepartment||'كل الأقسام')}</span><span>التاريخ: ${esc(displayDate(selectedDate))}</span></div><div class="summary"><div><small>إجمالي المطلوب</small><strong>${money.format(transferSummary.total)} ر.س</strong></div><div><small>تم التحويل</small><strong>${money.format(transferSummary.done)} ر.س</strong></div><div><small>متبقي</small><strong>${money.format(transferSummary.pending)} ر.س</strong></div></div><table><thead><tr><th style="width:7%">م</th><th style="width:18%">رقم المورد</th><th>اسم المورد</th><th style="width:20%">المبلغ</th><th style="width:18%">الحالة</th></tr></thead><tbody>${visibleTransfers.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.supplierNumber)}</td><td>${esc(x.supplierName)}</td><td>${money.format(parseAmount(x.amount))} ر.س</td><td class="${x.status==='transferred'?'done':'pending'}">${x.status==='transferred'?'تم التحويل':'مطلوب التحويل'}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">لا توجد تحويلات في هذا القالب</td></tr>'}</tbody><tfoot><tr><td colspan="3">الإجمالي العام</td><td class="total">${money.format(transferSummary.total)} ر.س</td><td></td></tr></tfoot></table></div></body></html>`;
   const supplierStatementHtml=supplier=>{
     const supplierNumber=String(supplier.supplierNumber||'').trim();
     const history=(supplierNumber?transfers.filter(x=>String(x.supplierNumber).trim()===supplierNumber):[]).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
@@ -109,16 +126,43 @@ function SuppliersPage({state,isEditing=false,onChange,onNotify}){
   const exportExcel=async()=>{const XLSX=await import('xlsx');const data=suppliers.map((x,i)=>({'م':i+1,'رقم المورد':x.supplierNumber,'اسم المورد':x.name,'IBAN':x.iban,'الهاتف':x.phone,'البريد الإلكتروني':x.email,'العنوان':x.address,'الرقم الضريبي':x.taxNumber}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data),'الموردين');XLSX.writeFile(wb,'بيان الموردين.xlsx');};
 
   return <section className="page suppliers-page">
-    <div className="suppliers-hero"><div><h2>بيان الموردين</h2><p>إدارة بيانات الموردين وسجل التحويلات حسب التاريخ والقسم</p></div><div className="suppliers-tabs"><button className={tab==='suppliers'?'active':''} onClick={()=>setTab('suppliers')}>بيانات الموردين</button><button className={tab==='transfers'?'active':''} onClick={()=>setTab('transfers')}>الحوالات المطلوبة</button></div></div>
+    <div className="suppliers-hero"><div><h2>بيان الموردين</h2><p>إدارة بيانات الموردين وحفظ الحوالات في قوالب مستقلة</p></div><div className="suppliers-tabs"><button className={tab==='suppliers'?'active':''} onClick={()=>setTab('suppliers')}>بيانات الموردين</button><button className={tab==='transfers'?'active':''} onClick={()=>setTab('transfers')}>الحوالات المطلوبة</button><button className={tab==='register'?'active':''} onClick={()=>setTab('register')}><History size={16}/> سجل الحوالات</button></div></div>
     {tab==='suppliers'?<>
       <div className="supplier-toolbar"><div className="supplier-search"><Search size={16}/><input value={query} onChange={e=>{setQuery(e.target.value);setSupplierPage(1);}} placeholder="بحث برقم أو اسم المورد أو IBAN"/></div><button disabled={!isEditing} onClick={()=>fileRef.current?.click()}><Upload/> استيراد Excel</button><input ref={fileRef} hidden type="file" accept=".xlsx,.xls,.csv" onChange={e=>handleFile(e.target.files?.[0])}/><button onClick={exportExcel}><FileSpreadsheet/> تصدير Excel</button><button onClick={()=>setPreview(supplierHtml())}><Eye/> معاينة التقرير</button></div>
       <div className="supplier-add-form"><div className="supplier-add-heading"><div><strong>إضافة مورد جديد</strong><span>اكتب البيانات ثم اضغط «إضافة المورد»</span></div><button disabled={!isEditing} onClick={addSupplier}><Plus/> إضافة المورد</button></div><div className="supplier-add-grid">{supplierFields.map(([key,label])=><label key={key}><span>{label}</span><input disabled={!isEditing} value={supplierDraft[key]} onChange={e=>setSupplierDraft({...supplierDraft,[key]:e.target.value})} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();const inputs=[...e.currentTarget.closest('.supplier-add-grid').querySelectorAll('input:not(:disabled)')],index=inputs.indexOf(e.currentTarget);if(index<inputs.length-1)inputs[index+1].focus();else addSupplier();}}}/></label>)}</div></div>
       {importRows.length>0&&<div className="supplier-import-box"><strong>الاستيراد الذكي من Excel</strong><div><label>عمود رقم المورد<input value={map.num} onChange={e=>setMap({...map,num:e.target.value})}/></label><label>عمود الاسم<input value={map.name} onChange={e=>setMap({...map,name:e.target.value})}/></label><label>عمود IBAN<input value={map.iban} onChange={e=>setMap({...map,iban:e.target.value})}/></label><label>من صف<input type="number" value={map.from} onChange={e=>setMap({...map,from:e.target.value})}/></label><label>إلى صف<input type="number" value={map.to} onChange={e=>setMap({...map,to:e.target.value})} placeholder="آخر الملف"/></label><button onClick={applyImport}>استيراد المحدد</button></div></div>}
       <div className="supplier-table-wrap"><table className="supplier-table"><thead><tr><th>م</th><th>رقم المورد</th><th>اسم المورد</th><th>رقم حساب IBAN المورد</th><th>الهاتف</th><th>الإيميل</th><th>العنوان</th><th>الرقم الضريبي</th><th>الإجراءات</th></tr></thead><tbody>{pagedSuppliers.length?pagedSuppliers.map((x,i)=><tr key={x.id}><td>{(supplierPage-1)*SUPPLIERS_PER_PAGE+i+1}</td>{['supplierNumber','name','iban','phone','email','address','taxNumber'].map(k=><td key={k}><input disabled={!isEditing} value={x[k]} onChange={e=>patchSupplier(x.id,k,e.target.value)}/></td>)}<td className="supplier-actions"><button onClick={()=>setPreview(supplierHtml(x))} title="كارت المورد"><UserRound/></button><button className="supplier-statement-btn" onClick={()=>setPreview(supplierStatementHtml(x))} title="كشف حساب المورد"><History/><span>كشف الحساب</span></button>{isEditing&&<button onClick={()=>deleteSupplier(x.id)} title="حذف المورد"><Trash2/></button>}</td></tr>):<tr><td colSpan="9"><div className="supplier-transfer-empty"><UserRound/><strong>لا توجد بيانات موردين مطابقة</strong></div></td></tr>}</tbody></table>{filtered.length>0&&<div className="supplier-pagination"><span>عرض {(supplierPage-1)*SUPPLIERS_PER_PAGE+1}–{Math.min(supplierPage*SUPPLIERS_PER_PAGE,filtered.length)} من {filtered.length} مورد</span><div><button disabled={supplierPage===1} onClick={()=>setSupplierPage(page=>page-1)}>السابق</button><strong>صفحة {supplierPage} من {supplierPageCount}</strong><button disabled={supplierPage===supplierPageCount} onClick={()=>setSupplierPage(page=>page+1)}>التالي</button></div></div>}</div>
+    </>:tab==='register'?<>
+      <div className="supplier-toolbar"><div className="supplier-search"><Search size={16}/><input value={registerQuery} onChange={e=>setRegisterQuery(e.target.value)} placeholder="بحث باسم القالب أو القسم أو التاريخ"/></div><button disabled={!isEditing} onClick={startTemplate}><Plus/> قالب جديد</button></div>
+      <div className="supplier-table-wrap"><table className="supplier-table transfer-register-table">
+        <thead><tr><th>القالب</th><th>القسم</th><th>التاريخ</th><th>الحوالات</th><th>الإجمالي</th><th>تم التحويل</th><th></th></tr></thead>
+        <tbody>{matchingTemplates.map(group=><tr key={group.id}>
+          <td><strong>{group.name}</strong></td><td>{group.department||'—'}</td><td>{displayDate(group.date)}</td><td>{group.rows.length}</td>
+          <td>{money.format(group.rows.reduce((total,row)=>total+parseAmount(row.amount),0))} ر.س</td>
+          <td>{group.rows.filter(row=>row.status==='transferred').length} من {group.rows.length}</td>
+          <td><button className="supplier-statement-btn" onClick={()=>openTemplate(group.id)}><FolderOpen size={15}/> فتح القالب</button></td>
+        </tr>)}
+        {!matchingTemplates.length&&<tr><td colSpan="7"><div className="supplier-transfer-empty"><History/><strong>{registerQuery.trim()?'لا توجد قوالب مطابقة للبحث':'لا توجد قوالب محفوظة بعد'}</strong></div></td></tr>}</tbody>
+      </table></div>
     </>:<>
-      <div className="supplier-transfer-head"><div className="supplier-transfer-filters"><label><span>تاريخ التحويلات</span><RtlDatePicker value={selectedDate} onChange={setSelectedDate}/></label><label><span>عرض قسم</span><select value={selectedDepartment} onChange={e=>setSelectedDepartment(e.target.value)}><option value="">كل الأقسام</option>{transferDepartments.map(x=><option key={x} value={x}>{x}</option>)}</select></label><label><span>القسم — إدخال يدوي (لكل الصفوف الظاهرة)</span><input disabled={!isEditing} value={departmentDraft} onChange={e=>setDepartmentDraft(e.target.value)} onBlur={commitDepartment} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}if(e.key==='Escape')setDepartmentDraft(selectedDepartment);}} list="supplier-transfer-departments" placeholder="اكتب اسم القسم"/><datalist id="supplier-transfer-departments">{transferDepartments.map(x=><option key={x} value={x}/>)}</datalist></label></div><div><button disabled={!isEditing||!selectedDepartment.trim()} onClick={addTransfer}><Plus/> إضافة تحويل لهذا اليوم</button><button onClick={()=>setPreview(transfersHtml())}><Eye/> معاينة وطباعة</button></div></div>
+      <div className="supplier-transfer-head">
+        <div className="supplier-transfer-filters">
+          <div className="transfer-template-heading"><strong>{activeTemplate?.name||'الحوالات المطلوبة'}</strong><small>{activeTemplate?displayDate(selectedDate):'أنشئ قالبًا أو افتح واحدًا من السجل'}</small></div>
+          {activeTemplate&&<label><span>قسم القالب الحالي</span><input disabled={!isEditing} value={departmentDraft} onChange={e=>setDepartmentDraft(e.target.value)} onBlur={commitDepartment} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}if(e.key==='Escape')setDepartmentDraft(selectedDepartment);}} list="supplier-transfer-departments" placeholder="اكتب اسم القسم"/></label>}
+        </div>
+        <div className="transfer-template-actions"><button disabled={!isEditing} onClick={startTemplate}><Plus/> قالب جديد</button><button disabled={!isEditing||!activeTemplate||!selectedDepartment} onClick={addTransfer}><Plus/> إضافة حوالة للقالب</button><button disabled={!activeTemplate} onClick={()=>setPreview(transfersHtml())}><Eye/> معاينة وطباعة</button></div>
+      </div>
+      <datalist id="supplier-transfer-departments">{transferDepartments.map(department=><option key={department} value={department}/>)}</datalist>
+      {templateDraft&&isEditing&&<form className="supplier-transfer-head transfer-template-form" onSubmit={saveTemplate}>
+        <div className="supplier-transfer-filters">
+          <label><span>القسم</span><input required autoFocus value={templateDraft.department} onChange={e=>setTemplateDraft({...templateDraft,department:e.target.value})} list="supplier-transfer-departments" placeholder="اختر أو اكتب القسم"/></label>
+          <label><span>اسم القالب (اختياري)</span><input value={templateDraft.name} onChange={e=>setTemplateDraft({...templateDraft,name:e.target.value})} placeholder="مثال: دفعة الموردين الثانية"/></label>
+          <label><span>تاريخ القالب</span><RtlDatePicker value={templateDraft.date} onChange={date=>setTemplateDraft({...templateDraft,date})}/></label>
+        </div>
+        <div className="transfer-template-actions"><button type="submit" disabled={!templateDraft.department.trim()}>حفظ وفتح القالب</button><button type="button" onClick={()=>setTemplateDraft(null)}>إلغاء</button></div>
+      </form>}
       <div className="supplier-transfer-summary"><div><span>إجمالي المطلوب</span><strong>{money.format(transferSummary.total)} ر.س</strong></div><div className="done"><span>تم التحويل</span><strong>{money.format(transferSummary.done)} ر.س</strong></div><div className="pending"><span>متبقي للتحويل</span><strong>{money.format(transferSummary.pending)} ر.س</strong></div></div>
-      <div className="supplier-table-wrap"><table className="supplier-table transfer-table"><thead><tr><th>م</th><th>التاريخ</th><th>القسم</th><th>رقم المورد</th><th>اسم المورد</th><th>المبلغ</th><th>حالة التحويل</th><th></th></tr></thead><tbody>{visibleTransfers.length?visibleTransfers.map((x,i)=><tr key={x.id}><td>{i+1}</td><td>{displayDate(x.date)}</td><td>{x.department}</td><td><input ref={node=>{if(node)transferSupplierRefs.current[x.id]=node;}} disabled={!isEditing} value={x.supplierNumber} onChange={e=>patchTransfer(x.id,'supplierNumber',e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(supplierForTransfer(x))transferAmountRefs.current[x.id]?.focus();else onNotify?.({tone:'error',title:'المورد غير موجود',message:'اختر رقم المورد من القائمة حتى يظهر اسمه.'});}}} list="supplier-number-list" placeholder="رقم أو اسم المورد"/></td><td><div className="transfer-supplier-cell"><input disabled value={x.supplierName}/><button disabled={!supplierForTransfer(x)} onClick={()=>setPreview(supplierStatementHtml(supplierForTransfer(x)))} title="فتح كشف حساب المورد"><History/><span>كشف</span></button></div></td><td><input ref={node=>{if(node)transferAmountRefs.current[x.id]=node;}} disabled={!isEditing} inputMode="decimal" value={formatAmountInput(x.amount)} onChange={e=>patchTransfer(x.id,'amount',formatAmountInput(e.target.value))} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(parseAmount(x.amount)>0)addTransfer();else onNotify?.({tone:'error',title:'اكتب المبلغ أولًا',message:'أدخل مبلغًا أكبر من صفر ثم اضغط Enter.'});}}}/></td><td><button disabled={!isEditing} className={`supplier-transfer-status ${x.status==='transferred'?'done':'pending'}`} onClick={()=>toggleTransferred(x)}>{x.status==='transferred'?<><CheckCircle2/> تم التحويل</>:<><Clock3/> مطلوب التحويل</>}</button></td><td>{isEditing&&<button className="row-delete" onClick={()=>deleteTransfer(x)} title="مسح التحويل"><Trash2/></button>}</td></tr>):<tr><td colSpan="8"><div className="supplier-transfer-empty"><History/><strong>لا توجد تحويلات لهذا التاريخ والقسم</strong><span>أضف تحويلات اليوم وستظل التحويلات القديمة محفوظة في تواريخها.</span></div></td></tr>}</tbody><tfoot><tr><td colSpan="5">إجمالي {displayDate(selectedDate)} — {selectedDepartment||'كل الأقسام'}</td><td><strong>{money.format(transferSummary.total)} ر.س</strong></td><td colSpan="2"></td></tr></tfoot></table><datalist id="supplier-number-list">{suppliers.map(s=><React.Fragment key={s.id}><option value={s.supplierNumber}>{s.name}</option><option value={s.name}>{s.supplierNumber}</option></React.Fragment>)}</datalist></div>
+      <div className="supplier-table-wrap"><table className="supplier-table transfer-table"><thead><tr><th>م</th><th>التاريخ</th><th>القسم</th><th>رقم المورد</th><th>اسم المورد</th><th>المبلغ</th><th>حالة التحويل</th><th></th></tr></thead><tbody>{visibleTransfers.length?visibleTransfers.map((x,i)=><tr key={x.id}><td>{i+1}</td><td>{displayDate(x.date)}</td><td>{x.department}</td><td><input ref={node=>{if(node)transferSupplierRefs.current[x.id]=node;}} disabled={!isEditing} value={x.supplierNumber} onChange={e=>patchTransfer(x.id,'supplierNumber',e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(supplierForTransfer(x))transferAmountRefs.current[x.id]?.focus();else onNotify?.({tone:'error',title:'المورد غير موجود',message:'اختر رقم المورد من القائمة حتى يظهر اسمه.'});}}} list="supplier-number-list" placeholder="رقم أو اسم المورد"/></td><td><div className="transfer-supplier-cell"><input disabled value={x.supplierName}/><button disabled={!supplierForTransfer(x)} onClick={()=>setPreview(supplierStatementHtml(supplierForTransfer(x)))} title="فتح كشف حساب المورد"><History/><span>كشف</span></button></div></td><td><input ref={node=>{if(node)transferAmountRefs.current[x.id]=node;}} disabled={!isEditing} inputMode="decimal" value={formatAmountInput(x.amount)} onChange={e=>patchTransfer(x.id,'amount',formatAmountInput(e.target.value))} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(parseAmount(x.amount)>0)addTransfer();else onNotify?.({tone:'error',title:'اكتب المبلغ أولًا',message:'أدخل مبلغًا أكبر من صفر ثم اضغط Enter.'});}}}/></td><td><button disabled={!isEditing} className={`supplier-transfer-status ${x.status==='transferred'?'done':'pending'}`} onClick={()=>toggleTransferred(x)}>{x.status==='transferred'?<><CheckCircle2/> تم التحويل</>:<><Clock3/> مطلوب التحويل</>}</button></td><td>{isEditing&&<button className="row-delete" onClick={()=>deleteTransfer(x)} title="مسح التحويل"><Trash2/></button>}</td></tr>):<tr><td colSpan="8"><div className="supplier-transfer-empty"><History/><strong>لا توجد حوالات في هذا القالب</strong><span>{activeTemplate?'أضف أول حوالة لهذا القالب.':'ابدأ بإنشاء قالب جديد للحوالات المطلوبة.'}</span></div></td></tr>}</tbody><tfoot><tr><td colSpan="5">إجمالي {activeTemplate?.name||'القالب'}</td><td><strong>{money.format(transferSummary.total)} ر.س</strong></td><td colSpan="2"></td></tr></tfoot></table><datalist id="supplier-number-list">{suppliers.map(s=><React.Fragment key={s.id}><option value={s.supplierNumber}>{s.name}</option><option value={s.name}>{s.supplierNumber}</option></React.Fragment>)}</datalist></div>
     </>}
     {preview&&<Preview html={preview} onClose={()=>setPreview(null)}/>}
   </section>;
